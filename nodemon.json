@@ -1,0 +1,21 @@
+{
+  "ignore": [
+    "whatsapp-sessions/*",
+    "whatsapp-sessions/**/*",
+    "*.json",
+    "creds.json",
+    "app-state-sync-key-*",
+    "session-*"
+  ],
+  "watch": [
+    "*.js",
+    "routes/*.js",
+    "controllers/*.js",
+    "services/*.js",
+    "models/*.js",
+    "middlewares/*.js",
+    "config/*.js"
+  ],
+  "ext": "js",
+  "delay": 1000
+}
