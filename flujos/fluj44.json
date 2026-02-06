@@ -1,0 +1,338 @@
+{
+    "name": "Tesis - Chatbot WhatsApp Completo V2",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "whatsapp-mensaje",
+                "options": {}
+            },
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2.1,
+            "position": [
+                -3328,
+                -1152
+            ],
+            "id": "92af32b3-1f1d-48ff-8d72-779a4f805265",
+            "name": "Webhook",
+            "webhookId": "7c272506-5f62-456f-a7c2-9dd935c3ec22"
+        },
+        {
+            "parameters": {
+                "url": "http://host.docker.internal:3000/api/whatsapp/public/configuracion-chatbot",
+                "sendQuery": true,
+                "specifyQuery": "json",
+                "jsonQuery": "={\n  \"empresaId\": \"{{ $json.body.empresaId }}\"\n}",
+                "options": {}
+            },
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.3,
+            "position": [
+                -3136,
+                -1152
+            ],
+            "id": "ee265a5d-f190-4036-b243-475be9d6fe27",
+            "name": "HTTP Request"
+        },
+        {
+            "parameters": {
+                "assignments": {
+                    "assignments": [
+                        {
+                            "id": "msg-usuario",
+                            "name": "mensaje_usuario",
+                            "value": "={{ $('Webhook').item.json.body.mensaje }}",
+                            "type": "string"
+                        },
+                        {
+                            "id": "session-key",
+                            "name": "nombreSesion",
+                            "value": "={{ $('HTTP Request').first().json.sessionKey }}",
+                            "type": "string"
+                        },
+                        {
+                            "id": "empresa-id",
+                            "name": "empresaId",
+                            "value": "={{ $('Webhook').item.json.body.empresaId }}",
+                            "type": "string"
+                        },
+                        {
+                            "id": "push-name",
+                            "name": "pushName",
+                            "value": "={{ $('Webhook').item.json.body.pushName }}",
+                            "type": "string"
+                        }
+                    ]
+                },
+                "includeOtherFields": true,
+                "options": {}
+            },
+            "type": "n8n-nodes-base.set",
+            "typeVersion": 3.4,
+            "position": [
+                -2944,
+                -1152
+            ],
+            "id": "183bc941-568f-4df3-adcc-8521ea7c109f",
+            "name": "Edit Fields"
+        },
+        {
+            "parameters": {
+                "promptType": "define",
+                "text": "={{ $('Webhook').first().json.body.mensaje }}",
+                "options": {
+                    "systemMessage": "Eres un clasificador de contexto para un chatbot de ventas por WhatsApp.\n\nTu tarea: Determinar si el mensaje del usuario requiere respuesta del bot de ventas.\n\n=== MENSAJES EN_CONTEXTO (el bot DEBE responder) ===\n✅ Consultas sobre productos/catálogo (\"productos\", \"qué venden\", \"menu\")\n✅ Horarios de atención (\"están abiertos\", \"a qué hora cierran\")\n✅ Disponibilidad de productos (\"tienen X disponible\")\n✅ Atención al cliente y soporte\n✅ Ubicación del negocio (\"dónde están\", \"dirección\")\n✅ Precios (\"cuánto cuesta\", \"precio de X\")\n✅ Preguntas generales del negocio\n✅ Pedidos en formato válido:\n   - \"1,2\" (producto 1, cantidad 2)\n   - \"1,2;3,1\" (múltiples productos)\n   - Cualquier patrón número,número\n✅ Confirmación de nombre para pedido (cuando ya hay pedido activo)\n✅ Saludos básicos de inicio (\"hola\", \"buenos días\", \"buenas tardes\")\n✅ Palabras clave: \"cancelar\", \"confirmar\", \"sí\", \"no\" (en contexto de pedido)\n✅ Consultas de pedidos: \"mis pedidos\", \"ver pedidos\", \"consultar\"\n✅ Cancelación de pedidos: \"cancelar pedido\", \"cancelar pedido X\"\n\n=== MENSAJES FUERA_CONTEXTO (el bot NO debe responder) ===\n❌ Conversaciones personales entre personas físicas\n❌ Saludos dirigidos a personas específicas (\"hola Juan\", \"qué onda compa\")\n❌ Temas sentimentales o románticos\n❌ Pláticas casuales de amigos/familia\n❌ Bromas internas, memes, stickers sin contexto de negocio\n❌ Temas políticos, religiosos, deportivos (sin relación al negocio)\n❌ Mensajes claramente para otra persona\n❌ Spam o publicidad de otros negocios\n❌ Contenido ofensivo o inapropiado\n\n=== CASOS ESPECIALES ===\n- \"Hola\" solo → EN_CONTEXTO (puede ser inicio de compra)\n- \"Hola, cómo estás\" con nombre → FUERA_CONTEXTO (conversación personal)\n- Números solos sin comas (ej: \"123456\") → FUERA_CONTEXTO (puede ser teléfono/código)\n- Formato pedido válido (\"1,2\") → SIEMPRE EN_CONTEXTO\n- \"mis pedidos\" → SIEMPRE EN_CONTEXTO\n- \"cancelar pedido X\" → SIEMPRE EN_CONTEXTO\n\n=== INSTRUCCIONES DE RESPUESTA ===\nAnaliza el mensaje y responde ÚNICAMENTE con una de estas dos palabras:\n\"EN_CONTEXTO\" o \"FUERA_CONTEXTO\"\n\nNo agregues explicaciones, puntuación ni texto adicional.\nSolo la palabra exacta."
+                }
+            },
+            "type": "@n8n/n8n-nodes-langchain.agent",
+            "typeVersion": 3,
+            "position": [
+                -2768,
+                -1152
+            ],
+            "id": "16eaf6a7-f325-4ccb-8a84-54416b41aaf1",
+            "name": "AI Agent"
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "options": {
+                        "caseSensitive": true,
+                        "leftValue": "",
+                        "typeValidation": "strict",
+                        "version": 2
+                    },
+                    "conditions": [
+                        {
+                            "id": "check-contexto",
+                            "leftValue": "={{ $json.output }}",
+                            "rightValue": "EN_CONTEXTO",
+                            "operator": {
+                                "type": "string",
+                                "operation": "contains"
+                            }
+                        }
+                    ],
+                    "combinator": "and"
+                },
+                "options": {}
+            },
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2.2,
+            "position": [
+                -2416,
+                -1152
+            ],
+            "id": "1ce90807-e4f1-42c5-8625-03fa19a93a6e",
+            "name": "If"
+        },
+        {
+            "parameters": {
+                "jsCode": "const config = $('HTTP Request').first().json;\nconst webhook = $('Webhook').first().json.body;\nconst now = new Date();\nconst hour = now.getHours();\nconst day = now.getDay();\n\nconst diasLaborales = config.dias_laborales || [1, 2, 3, 4, 5];\nconst enDiaLaboral = diasLaborales.includes(day);\nconst enHorario = hour >= config.hora_inicio && hour < config.hora_fin;\nconst abierto = enDiaLaboral && enHorario;\n\nconst mensaje = webhook.mensaje || '';\nconst mensajeLimpio = mensaje.toLowerCase().trim();\n\nconst nombreSesion = config.sessionKey || \n                     webhook.sessionKey || \n                     `${webhook.empresaId}_empresa_${webhook.empresaId}`;\n\n// ========================================\n// 🔥 PRIORIDAD 1: SESIÓN DE CANCELACIÓN ACTIVA\n// ========================================\ntry {\n  const sesionCancelacion = await fetch(\n    `http://host.docker.internal:3000/api/pedidos/sesion-cancelacion/${webhook.empresaId}/${webhook.numeroOrigen}`\n  );\n  const cancelData = await sesionCancelacion.json();\n  \n  if (cancelData.success && cancelData.data) {\n    const pedidoId = cancelData.data.pedido_id;\n    \n    // Usuario confirma cancelación\n    if (['sí', 'si', 's', 'confirmar', 'confirmo', 'ok'].includes(mensajeLimpio)) {\n      // Cancelar el pedido\n      const cancelarResponse = await fetch(\n        'http://host.docker.internal:3000/api/pedidos/cancelar',\n        {\n          method: 'PATCH',\n          headers: { 'Content-Type': 'application/json' },\n          body: JSON.stringify({\n            pedidoId: pedidoId,\n            telefono: webhook.numeroOrigen,\n            empresaId: webhook.empresaId\n          })\n        }\n      );\n      \n      const cancelResult = await cancelarResponse.json();\n      \n      // Limpiar sesión\n      await fetch(\n        `http://host.docker.internal:3000/api/pedidos/sesion-cancelacion/${webhook.empresaId}/${webhook.numeroOrigen}`,\n        { method: 'DELETE' }\n      );\n      \n      if (cancelResult.success) {\n        return {\n          json: {\n            ...config,\n            numeroOrigen: webhook.numeroOrigen,\n            empresaId: webhook.empresaId,\n            nombreSesion: nombreSesion,\n            pushName: webhook.pushName,\n            mensaje_usuario: mensajeLimpio,\n            mensaje: `✅ *Pedido #${pedidoId} cancelado*\\n\\n` +\n                     `💵 Total: $${cancelResult.data.total}\\n\\n` +\n                     `📋 Escribe *mis pedidos* para ver tus otros pedidos activos.\\n` +\n                     `🛒 O escribe *productos* para hacer un nuevo pedido.`,\n            tipo: 'respuesta_directa',\n            abierto: abierto\n          }\n        };\n      }\n    }\n    \n    // Usuario cancela la cancelación\n    if (['no', 'n', 'cancelar', 'mantener'].includes(mensajeLimpio)) {\n      await fetch(\n        `http://host.docker.internal:3000/api/pedidos/sesion-cancelacion/${webhook.empresaId}/${webhook.numeroOrigen}`,\n        { method: 'DELETE' }\n      );\n      \n      return {\n        json: {\n          ...config,\n          numeroOrigen: webhook.numeroOrigen,\n          empresaId: webhook.empresaId,\n          nombreSesion: nombreSesion,\n          pushName: webhook.pushName,\n          mensaje_usuario: mensajeLimpio,\n          mensaje: `✅ *Cancelación abortada*\\n\\nTu pedido #${pedidoId} sigue activo.\\n\\n` +\n                   `📋 Escribe *mis pedidos* para ver todos tus pedidos.`,\n          tipo: 'respuesta_directa',\n          abierto: abierto\n        }\n      };\n    }\n    \n    // Respuesta inválida\n    return {\n      json: {\n        ...config,\n        numeroOrigen: webhook.numeroOrigen,\n        empresaId: webhook.empresaId,\n        nombreSesion: nombreSesion,\n        pushName: webhook.pushName,\n        mensaje_usuario: mensajeLimpio,\n        mensaje: `⚠️ *Respuesta no válida*\\n\\n` +\n                 `¿Deseas cancelar el pedido #${pedidoId}?\\n\\n` +\n                 `✅ Escribe *sí* para confirmar\\n` +\n                 `❌ Escribe *no* para mantener el pedido`,\n        tipo: 'respuesta_directa',\n        abierto: abierto\n      }\n    };\n  }\n} catch (error) {\n  console.log('ℹ️ No hay sesión de cancelación activa');\n}\n\n// ========================================\n// 🔥 PRIORIDAD 2: SESIÓN DE PEDIDO ACTIVA\n// ========================================\ntry {\n  const sesionResponse = await fetch(\n    `http://host.docker.internal:3000/api/pedidos/sesion/${webhook.empresaId}/${webhook.numeroOrigen}`\n  );\n  const sesionData = await sesionResponse.json();\n  \n  if (sesionData.success && sesionData.data && sesionData.data.estado === 'esperando_nombre') {\n    if (mensajeLimpio === 'cancelar') {\n      await fetch(\n        `http://host.docker.internal:3000/api/pedidos/sesion/${webhook.empresaId}/${webhook.numeroOrigen}`,\n        { method: 'DELETE' }\n      );\n      \n      return {\n        json: {\n          ...config,\n          numeroOrigen: webhook.numeroOrigen,\n          empresaId: webhook.empresaId,\n          nombreSesion: nombreSesion,\n          pushName: webhook.pushName,\n          mensaje_usuario: mensajeLimpio,\n          mensaje: \"❌ *Pedido cancelado*\\n\\n✅ Si cambias de opinión, escribe *productos* para ver el catálogo.\",\n          tipo: 'respuesta_directa',\n          abierto: abierto\n        }\n      };\n    }\n    \n    if (mensaje.trim().length < 3) {\n      return {\n        json: {\n          ...config,\n          numeroOrigen: webhook.numeroOrigen,\n          empresaId: webhook.empresaId,\n          nombreSesion: nombreSesion,\n          pushName: webhook.pushName,\n          mensaje_usuario: mensajeLimpio,\n          mensaje: \"⚠️ *Nombre muy corto*\\n\\n📝 Por favor escribe tu nombre completo (mínimo 3 caracteres).\\n\\n❌ O escribe *cancelar* para anular.\",\n          tipo: 'respuesta_directa',\n          abierto: abierto\n        }\n      };\n    }\n    \n    const datosPedido = typeof sesionData.data.datos_pedido === 'string' \n      ? JSON.parse(sesionData.data.datos_pedido) \n      : sesionData.data.datos_pedido;\n    \n    return {\n      json: {\n        ...config,\n        numeroOrigen: webhook.numeroOrigen,\n        empresaId: webhook.empresaId,\n        nombreSesion: nombreSesion,\n        pushName: webhook.pushName,\n        nombreCliente: mensaje.trim(),\n        items: datosPedido.items,\n        total: datosPedido.total,\n        tipo: 'crear_pedido_final',\n        mensaje_usuario: mensajeLimpio,\n        abierto: abierto\n      }\n    };\n  }\n} catch (error) {\n  console.log('ℹ️ No hay sesión de pedido activa');\n}\n\n// ========================================\n// 🔥 PRIORIDAD 3: COMANDOS ESPECIALES\n// ========================================\n\n// VER MIS PEDIDOS\nif (['mis pedidos', 'mispedidos', 'pedidos', 'ver pedidos', 'consultar'].includes(mensajeLimpio)) {\n  return {\n    json: {\n      ...config,\n      numeroOrigen: webhook.numeroOrigen,\n      empresaId: webhook.empresaId,\n      nombreSesion: nombreSesion,\n      pushName: webhook.pushName,\n      mensaje_usuario: mensajeLimpio,\n      tipo: 'consultar_pedidos',\n      abierto: abierto\n    }\n  };\n}\n\n// CANCELAR PEDIDO (inicia flujo)\nif (mensajeLimpio.startsWith('cancelar pedido')) {\n  const match = mensajeLimpio.match(/cancelar pedido\\s+(\\d+)/);\n  \n  if (match) {\n    const pedidoId = parseInt(match[1]);\n    return {\n      json: {\n        ...config,\n        numeroOrigen: webhook.numeroOrigen,\n        empresaId: webhook.empresaId,\n        nombreSesion: nombreSesion,\n        pushName: webhook.pushName,\n        mensaje_usuario: mensajeLimpio,\n        tipo: 'iniciar_cancelacion',\n        pedidoId: pedidoId,\n        abierto: abierto\n      }\n    };\n  }\n}\n\n// ========================================\n// 🔥 PRIORIDAD 4: FORMATO DE PEDIDO\n// ========================================\nconst patronPedido = /^\\d+,\\d+(;\\d+,\\d+)*$/;\nif (patronPedido.test(mensajeLimpio)) {\n  return {\n    json: {\n      ...config,\n      numeroOrigen: webhook.numeroOrigen,\n      empresaId: webhook.empresaId,\n      nombreSesion: nombreSesion,\n      pushName: webhook.pushName,\n      mensaje_usuario: mensajeLimpio,\n      tipo: 'formato_pedido',\n      abierto: abierto,\n      hora_actual: hour,\n      dia_actual: day\n    }\n  };\n}\n\n// ========================================\n// 🔥 PRIORIDAD 5: FLUJO NORMAL\n// ========================================\nreturn {\n  json: {\n    ...config,\n    mensaje_usuario: mensajeLimpio,\n    numeroOrigen: webhook.numeroOrigen,\n    pushName: webhook.pushName,\n    empresaId: webhook.empresaId,\n    nombreSesion: nombreSesion,\n    conectado: config.conectado,\n    abierto: abierto,\n    hora_actual: hour,\n    dia_actual: day,\n    mensaje_respuesta: abierto ? config.mensaje_horario : config.mensaje_fuera_horario\n  }\n};"
+            },
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                -2208,
+                -1232
+            ],
+            "id": "be7f2228-d65a-4ad9-a7c3-52b1f8066771",
+            "name": "Code in JavaScript"
+        },
+        {
+            "parameters": {
+                "rules": {
+                    "values": [
+                        {
+                            "conditions": {
+                                "options": {
+                                    "caseSensitive": true,
+                                    "leftValue": "",
+                                    "typeValidation": "strict",
+                                    "version": 2
+                                },
+                                "conditions": [
+                                    {
+                                        "leftValue": "={{ $json.mensaje_usuario }}",
+                                        "rightValue": "horario",
+                                        "operator": {
+                                            "type": "string",
+                                            "operation": "contains"
+                                        },
+                                        "id": "check-horario"
+                                    }
+                                ],
+                                "combinator": "and"
+                            },
+                            "renameOutput": true,
+                            "outputKey": "horarios"
+                        },
+                        {
+                            "conditions": {
+                                "options": {
+                                    "caseSensitive": true,
+                                    "leftValue": "",
+                                    "typeValidation": "strict",
+                                    "version": 2
+                                },
+                                "conditions": [
+                                    {
+                                        "id": "check-productos",
+                                        "leftValue": "={{ $json.mensaje_usuario }}",
+                                        "rightValue": "producto",
+                                        "operator": {
+                                            "type": "string",
+                                            "operation": "contains"
+                                        }
+                                    }
+                                ],
+                                "combinator": "and"
+                            },
+                            "renameOutput": true,
+                            "outputKey": "productos"
+                        },
+                        {
+                            "conditions": {
+                                "options": {
+                                    "caseSensitive": true,
+                                    "leftValue": "",
+                                    "typeValidation": "strict",
+                                    "version": 2
+                                },
+                                "conditions": [
+                                    {
+                                        "id": "check-consultar-pedidos",
+                                        "leftValue": "={{ $json.tipo }}",
+                                        "rightValue": "consultar_pedidos",
+                                        "operator": {
+                                            "type": "string",
+                                            "operation": "equals"
+                                        }
+                                    }
+                                ],
+                                "combinator": "and"
+                            },
+                            "renameOutput": true,
+                            "outputKey": "consultar_pedidos"
+                        },
+                        {
+                            "conditions": {
+                                "options": {
+                                    "caseSensitive": true,
+                                    "leftValue": "",
+                                    "typeValidation": "strict",
+                                    "version": 2
+                                },
+                                "conditions": [
+                                    {
+                                        "id": "check-iniciar-cancelacion",
+                                        "leftValue": "={{ $json.tipo }}",
+                                        "rightValue": "iniciar_cancelacion",
+                                        "operator": {
+                                            "type": "string",
+                                            "operation": "equals"
+                                        }
+                                    }
+                                ],
+                                "combinator": "and"
+                            },
+                            "renameOutput": true,
+                            "outputKey": "iniciar_cancelacion"
+                        }
+                    ]
+                },
+                "options": {
+                    "fallbackOutput": "extra"
+                }
+            },
+            "type": "n8n-nodes-base.switch",
+            "typeVersion": 3.3,
+            "position": [
+                -1984,
+                -976
+            ],
+            "id": "5a20fea4-485b-447c-8300-fd5e482fb9bd",
+            "name": "Switch"
+        }
+    ],
+    "pinData": {},
+    "connections": {
+        "Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "HTTP Request",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "HTTP Request": {
+            "main": [
+                [
+                    {
+                        "node": "Edit Fields",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Edit Fields": {
+            "main": [
+                [
+                    {
+                        "node": "AI Agent",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "AI Agent": {
+            "main": [
+                [
+                    {
+                        "node": "If",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "If": {
+            "main": [
+                [
+                    {
+                        "node": "Code in JavaScript",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Code in JavaScript": {
+            "main": [
+                [
+                    {
+                        "node": "Switch",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "active": true,
+    "settings": {
+        "executionOrder": "v1"
+    },
+    "versionId": "nueva-version-completa",
+    "meta": {
+        "templateCredsSetupCompleted": true,
+        "instanceId": "06f3abd0c47bf03702da44aaccc72833bb792a76d9bfba39d8fccc46f2369aad"
+    },
+    "id": "T6uVBGtgYbAKwCt0",
+    "tags": []
+}

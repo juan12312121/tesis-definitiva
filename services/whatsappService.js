@@ -1,694 +1,1148 @@
 const makeWASocket = require('@whiskeysockets/baileys').default;
-const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, Browsers } = require('@whiskeysockets/baileys');
-const baileys = require('@whiskeysockets/baileys');
+const { 
+  useMultiFileAuthState, 
+  DisconnectReason, 
+  fetchLatestBaileysVersion, 
+  Browsers
+  // NO importar makeInMemoryStore - no existe en v7
+} = require('@whiskeysockets/baileys');
 const QRCode = require('qrcode');
 const path = require('path');
-const fs = require('fs');
-const { InstanciaWhatsapp } = require('../models');
-const pino = require('pino');
+const fs = require('fs').promises;
+const fsSync = require('fs'); // ← AGREGADO para operaciones síncronas
 
 class WhatsAppService {
   constructor() {
     this.sessions = new Map();
+    this.sessionStartTimes = new Map();
     this.qrCodes = new Map();
-    this.reconnectAttempts = new Map();
-    this.sessionReady = new Map();
+    this.messageStore = new Map();
+    this.contactCache = new Map();
+    this.jidCache = new Map();
     this.stores = new Map();
-    this.lastMessageTime = new Map(); // 🆕 Última vez que llegó un mensaje
-    this.healthCheckIntervals = new Map(); // 🆕 Intervalos de health check
-    console.log('✅ WhatsAppService constructor ejecutado');
+    this.storeIntervals = new Map(); // ← AGREGADO
   }
 
-  registrarEventosMensajes(sock, empresaId, nombreSesion, sessionKey) {
-    console.log(`
-╔════════════════════════════════════════════════════════╗
-║     🔍 INICIANDO REGISTRO DE EVENTOS - DIAGNÓSTICO    ║
-╠════════════════════════════════════════════════════════╣
-║ SessionKey: ${sessionKey}
-║ Empresa ID: ${empresaId}
-║ Sesión:     ${nombreSesion}
-╚════════════════════════════════════════════════════════╝
-    `);
+  // ========================================
+  // MÉTODO AUXILIAR: OBTENER NÚMERO REAL
+  // ========================================
+  async obtenerNumeroReal(sock, msg, sessionKey) {
+    const remoteJid = msg.key.remoteJid;
+    const pushName = msg.pushName || 'Desconocido';
 
-    // 1. Verificar que sock existe
-    console.log(`[PASO 1] ✓ sock existe: ${!!sock}`);
-    console.log(`[PASO 2] ✓ sock.ev existe: ${!!sock.ev}`);
-    console.log(`[PASO 3] ✓ Tipo de sock.ev: ${typeof sock.ev}`);
-    console.log(`[PASO 4] ✓ sock.ev.on es función: ${typeof sock.ev.on === 'function'}`);
+    console.log(`\n🔍 OBTENIENDO NÚMERO REAL...`);
+    console.log(`   RemoteJid: ${remoteJid}`);
+    console.log(`   PushName: ${pushName}`);
 
-    // 2. Listar métodos disponibles en sock.ev
-    console.log(`[PASO 5] 📋 Métodos de sock.ev:`, Object.keys(sock.ev).join(', '));
+    let numeroReal = null;
+    let numeroDescifrado = false;
 
-    // 3. Intentar múltiples formas de registrar el evento
-    console.log(`[PASO 6] 🔄 Registrando messages.upsert con .on()...`);
-    
-    try {
-      sock.ev.on('messages.upsert', (data) => {
-        console.log(`
-╔═══════════════════════════════════════════════════════════╗
-║  🎉 ¡EVENTO messages.upsert CAPTURADO CON .on()!         ║
-╠═══════════════════════════════════════════════════════════╣
-║  Data recibida: ${JSON.stringify(Object.keys(data))}
-╚═══════════════════════════════════════════════════════════╝
-        `);
-        this.procesarMensajes(data, empresaId, nombreSesion, sessionKey, sock);
-      });
-      console.log(`[PASO 6] ✅ Listener .on('messages.upsert') registrado`);
-    } catch (error) {
-      console.log(`[PASO 6] ❌ Error con .on(): ${error.message}`);
+    // CASO 1: JID NORMAL (@s.whatsapp.net)
+    if (remoteJid.endsWith('@s.whatsapp.net')) {
+      numeroReal = remoteJid.replace(/@s\.whatsapp\.net$/, '');
+      numeroDescifrado = true;
+      console.log(`   ✅ JID estándar - Número real: ${numeroReal}`);
     }
+    // CASO 2: JID CIFRADO (@lid)
+    else if (remoteJid.includes('@lid')) {
+      console.log(`   🔐 JID CIFRADO (@lid) detectado`);
 
-    // 4. Intentar con process si existe
-    if (typeof sock.ev.process === 'function') {
-      console.log(`[PASO 7] 🔄 Registrando con .process()...`);
+      // 🔥 DIAGNÓSTICO 1: Verificar store de contactos
       try {
-        sock.ev.process(async (events) => {
-          // Log de TODOS los eventos recibidos
-          const eventKeys = Object.keys(events);
-          console.log(`
-╔═══════════════════════════════════════════════════════════╗
-║  🎉 ¡EVENTO CAPTURADO CON .process()!                    ║
-╠═══════════════════════════════════════════════════════════╣
-║  Events keys: ${JSON.stringify(eventKeys)}
-╚═══════════════════════════════════════════════════════════╝
-          `);
-          
-          // Procesar TODOS los eventos de mensajes
-          if (events['messages.upsert']) {
-            console.log(`✅ messages.upsert encontrado en process`);
-            this.procesarMensajes(events['messages.upsert'], empresaId, nombreSesion, sessionKey, sock);
-          }
-          
-          if (events['messages.update']) {
-            console.log(`✅ messages.update encontrado`);
-          }
-          
-          if (events['chats.upsert']) {
-            console.log(`✅ chats.upsert encontrado`);
-          }
-        });
+        console.log(`\n   📋 DIAGNÓSTICO 1: Store de contactos`);
+        console.log(`   ================================`);
         
-        // ✅ CRÍTICO: Forzar flush del buffer
-        console.log(`[PASO 7.1] 🔄 Forzando flush de buffer...`);
-        if (typeof sock.ev.flush === 'function') {
-          setInterval(() => {
-            sock.ev.flush();
-          }, 1000);
-          console.log(`[PASO 7.1] ✅ Auto-flush activado cada 1s`);
-        }
-        
-        console.log(`[PASO 7] ✅ Listener .process() registrado`);
-      } catch (error) {
-        console.log(`[PASO 7] ❌ Error con .process(): ${error.message}`);
-      }
-    } else {
-      console.log(`[PASO 7] ⚠️ sock.ev.process no existe`);
-    }
-
-    // 5. Interceptar emit para ver TODOS los eventos
-    console.log(`[PASO 8] 🔄 Interceptando emit...`);
-    try {
-      const originalEmit = sock.ev.emit.bind(sock.ev);
-      let emitCounter = 0;
-      
-      sock.ev.emit = function(eventName, ...args) {
-        emitCounter++;
-        
-        // Filtrar eventos ruidosos
-        const eventosRuidosos = ['creds.update', 'connection.update'];
-        if (!eventosRuidosos.includes(eventName)) {
-          console.log(`
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃  🔔 EMIT INTERCEPTADO #${emitCounter}
-┃  Evento: "${eventName}"
-┃  Args length: ${args.length}
-┃  Session: ${sessionKey}
-┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-          `);
+        if (sock.store) {
+          console.log(`   ✅ sock.store existe`);
+          console.log(`   Propiedades del store:`, Object.keys(sock.store));
           
-          // Si es messages.upsert, procesarlo
-          if (eventName === 'messages.upsert' && args[0]) {
-            console.log(`✅ Detectado messages.upsert en emit, procesando...`);
-            this.procesarMensajes(args[0], empresaId, nombreSesion, sessionKey, sock);
-          }
-        }
-        
-        return originalEmit(eventName, ...args);
-      }.bind(this);
-      
-      console.log(`[PASO 8] ✅ Interceptor de emit instalado`);
-    } catch (error) {
-      console.log(`[PASO 8] ❌ Error interceptando emit: ${error.message}`);
-    }
-
-    // 6. Registrar otros eventos para debug
-    console.log(`[PASO 9] 🔄 Registrando eventos adicionales...`);
-    
-    const eventosARegistrar = [
-      'messages.update',
-      'message-receipt.update', 
-      'chats.upsert',
-      'contacts.upsert',
-      'messaging-history.set'
-    ];
-
-    eventosARegistrar.forEach((evento, index) => {
-      try {
-        sock.ev.on(evento, (data) => {
-          console.log(`📬 [${sessionKey}] Evento "${evento}" disparado`);
-        });
-        console.log(`[PASO 9.${index + 1}] ✅ Listener para "${evento}" registrado`);
-      } catch (error) {
-        console.log(`[PASO 9.${index + 1}] ❌ Error con "${evento}": ${error.message}`);
-      }
-    });
-
-    console.log(`
-╔════════════════════════════════════════════════════════╗
-║     ✅ REGISTRO DE EVENTOS COMPLETADO                 ║
-╠════════════════════════════════════════════════════════╣
-║ Session: ${sessionKey}
-║ Estado:  Escuchando eventos
-╚════════════════════════════════════════════════════════╝
-    `);
-
-    // ⚠️ WORKAROUND: Si events no llegan, usar polling manual
-    console.log(`[WORKAROUND] 🔄 Iniciando polling manual de chats cada 3s...`);
-    
-    const chatPolling = setInterval(async () => {
-      try {
-        // Obtener chats recientes
-        const chats = await sock.store?.chats?.all?.() || [];
-        
-        if (chats.length > 0) {
-          console.log(`[POLLING] 📊 ${chats.length} chats disponibles`);
-        }
-      } catch (error) {
-        // Silencioso
-      }
-    }, 3000);
-    
-    // Guardar para limpieza
-    sock._chatPolling = chatPolling;
-
-    sock._eventosRegistrados = true;
-    
-    // 🆕 INICIAR HEALTH CHECK AUTOMÁTICO
-    this.iniciarHealthCheck(sock, empresaId, nombreSesion, sessionKey);
-  }
-
-  // 🆕 SISTEMA DE SALUD AUTOMÁTICO
-  iniciarHealthCheck(sock, empresaId, nombreSesion, sessionKey) {
-    console.log(`[HEALTH] 🏥 Iniciando monitoreo de salud para ${sessionKey}`);
-    
-    // Limpiar health check anterior si existe
-    if (this.healthCheckIntervals.has(sessionKey)) {
-      clearInterval(this.healthCheckIntervals.get(sessionKey));
-    }
-    
-    // Inicializar timestamp
-    this.lastMessageTime.set(sessionKey, Date.now());
-    
-    // Health check cada 30 segundos
-    const healthInterval = setInterval(() => {
-      const ahora = Date.now();
-      const ultimoMensaje = this.lastMessageTime.get(sessionKey) || ahora;
-      const tiempoSinMensajes = Math.floor((ahora - ultimoMensaje) / 1000);
-      
-      // Si la sesión no está lista, skip
-      if (!this.sessionReady.get(sessionKey)) {
-        console.log(`[HEALTH] ⚠️ ${sessionKey}: Sesión no ready, esperando...`);
-        return;
-      }
-      
-      // Si han pasado más de 5 minutos sin mensajes, hacer test
-      if (tiempoSinMensajes > 300) { // 5 minutos
-        console.log(`[HEALTH] ⚠️ ${sessionKey}: ${Math.floor(tiempoSinMensajes/60)} min sin eventos`);
-        console.log(`[HEALTH] 🔧 Aplicando fix preventivo...`);
-        
-        try {
-          // Re-registrar eventos
-          sock._eventosRegistrados = false;
-          this.registrarEventosMensajes(sock, empresaId, nombreSesion, sessionKey);
-          
-          // Forzar flush
-          if (typeof sock.ev.flush === 'function') {
-            sock.ev.flush();
-          }
-          
-          // Actualizar timestamp para no hacer esto repetidamente
-          this.lastMessageTime.set(sessionKey, Date.now());
-          
-          console.log(`[HEALTH] ✅ Fix aplicado a ${sessionKey}`);
-        } catch (error) {
-          console.error(`[HEALTH] ❌ Error en fix: ${error.message}`);
-        }
-      } else if (tiempoSinMensajes > 60) {
-        // Log cada minuto si no hay actividad
-        console.log(`[HEALTH] 💚 ${sessionKey}: Activo (último evento hace ${tiempoSinMensajes}s)`);
-      }
-    }, 30000); // Cada 30 segundos
-    
-    this.healthCheckIntervals.set(sessionKey, healthInterval);
-    console.log(`[HEALTH] ✅ Health check activado para ${sessionKey}`);
-  }
-
-  procesarMensajes(data, empresaId, nombreSesion, sessionKey, sock) {
-    // 🆕 ACTUALIZAR timestamp de último mensaje
-    this.lastMessageTime.set(sessionKey, Date.now());
-    
-    console.log(`
-╔═══════════════════════════════════════════════════════════╗
-║  📦 PROCESANDO MENSAJES                                   ║
-╠═══════════════════════════════════════════════════════════╣
-║  Session: ${sessionKey}
-║  Data type: ${typeof data}
-║  Data keys: ${JSON.stringify(Object.keys(data || {}))}
-╚═══════════════════════════════════════════════════════════╝
-    `);
-
-    const { messages, type } = data;
-    
-    if (!messages || !Array.isArray(messages)) {
-      console.log(`⚠️ No hay mensajes válidos para procesar`);
-      return;
-    }
-
-    console.log(`📨 Procesando ${messages.length} mensaje(s), type: ${type}`);
-
-    messages.forEach((msg, index) => {
-      console.log(`
-═══════════════════ MENSAJE #${index + 1} ═══════════════════
-fromMe: ${msg.key.fromMe}
-remoteJid: ${msg.key.remoteJid}
-id: ${msg.key.id}
-messageTimestamp: ${msg.messageTimestamp}
-message exists: ${!!msg.message}
-message keys: ${msg.message ? Object.keys(msg.message).join(', ') : 'N/A'}
-════════════════════════════════════════════════════════════
-      `);
-
-      let textoMensaje = 'Sin texto';
-      
-      if (msg.message) {
-        textoMensaje = msg.message?.conversation || 
-                      msg.message?.extendedTextMessage?.text || 
-                      msg.message?.imageMessage?.caption ||
-                      (msg.message?.imageMessage ? '[Imagen]' : '') ||
-                      (msg.message?.videoMessage ? '[Video]' : '') ||
-                      (msg.message?.audioMessage ? '[Audio]' : '') ||
-                      'Mensaje multimedia';
-      }
-
-      const esStatus = msg.key.remoteJid === 'status@broadcast';
-      const esNewsletter = msg.key.remoteJid?.includes('@newsletter');
-      
-      // Mensaje RECIBIDO (de otros)
-      if (!msg.key.fromMe && msg.message && !esStatus && !esNewsletter) {
-        const numeroOrigen = msg.key.remoteJid;
-        const timestamp = new Date(msg.messageTimestamp * 1000).toLocaleString('es-MX');
-        
-        console.log(`
-╔════════════════════════════════════════════════════════╗
-║           📩 MENSAJE RECIBIDO DETECTADO               ║
-╠════════════════════════════════════════════════════════╣
-║ De:       ${numeroOrigen}
-║ Mensaje:  ${textoMensaje}
-║ Hora:     ${timestamp}
-╚════════════════════════════════════════════════════════╝
-        `);
-
-        // Enviar a N8N
-        this.enviarAWebhook(empresaId, nombreSesion, numeroOrigen, textoMensaje, msg, sessionKey)
-          .catch(err => console.error('❌ Error enviando a N8N:', err.message));
-      }
-      
-      // Mensaje ENVIADO (propios)
-      if (msg.key.fromMe && msg.message) {
-        console.log(`
-╔════════════════════════════════════════════════════════╗
-║           📤 MENSAJE ENVIADO DETECTADO                ║
-╠════════════════════════════════════════════════════════╣
-║ Para:     ${msg.key.remoteJid}
-║ Mensaje:  ${textoMensaje}
-╚════════════════════════════════════════════════════════╝
-        `);
-      }
-    });
-  }
-
-  async enviarAWebhook(empresaId, nombreSesion, numeroOrigen, mensaje, msg, sessionKey) {
-    console.log(`🔄 Enviando a webhook N8N...`);
-    
-    try {
-      const response = await fetch('http://localhost:5678/webhook/whatsapp-mensaje', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          empresaId,
-          nombreSesion,
-          numeroOrigen,
-          mensaje,
-          messageId: msg.key.id,
-          timestamp: new Date(msg.messageTimestamp * 1000),
-          sessionKey,
-          esGrupo: msg.key.remoteJid?.endsWith('@g.us'),
-          participant: msg.key.participant || null
-        })
-      });
-      
-      if (response.ok) {
-        console.log('✅ Mensaje enviado a N8N exitosamente');
-      } else {
-        console.log(`⚠️ N8N respondió con status: ${response.status}`);
-      }
-    } catch (error) {
-      console.error('❌ Error enviando a N8N:', error.message);
-    }
-  }
-
-  async iniciarSesion(empresaId, nombreSesion) {
-    const sessionKey = `${empresaId}_${nombreSesion}`;
-    
-    console.log(`
-╔════════════════════════════════════════════════════════╗
-║     🚀 INICIANDO SESIÓN WHATSAPP                      ║
-╠════════════════════════════════════════════════════════╣
-║ SessionKey: ${sessionKey}
-╚════════════════════════════════════════════════════════╝
-    `);
-    
-    try {
-      if (this.sessions.has(sessionKey)) {
-        console.log(`⚠️ Sesión ${sessionKey} ya existe`);
-        return { success: true, message: 'Sesión ya existe' };
-      }
-
-      const sessionPath = path.join(__dirname, '..', 'whatsapp-sessions', `session_${empresaId}_${nombreSesion}`);
-      console.log(`[INIT-1] 📁 Session path: ${sessionPath}`);
-      
-      if (!fs.existsSync(sessionPath)) {
-        fs.mkdirSync(sessionPath, { recursive: true });
-        console.log(`[INIT-2] ✅ Carpeta creada`);
-      } else {
-        console.log(`[INIT-2] ✅ Carpeta ya existe`);
-      }
-
-      const credsPath = path.join(sessionPath, 'creds.json');
-      const tieneCredenciales = fs.existsSync(credsPath);
-      console.log(`[INIT-3] 🔐 Tiene credenciales: ${tieneCredenciales}`);
-
-      console.log(`[INIT-4] 🔄 Cargando auth state...`);
-      const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
-      console.log(`[INIT-4] ✅ Auth state cargado`);
-      
-      console.log(`[INIT-5] 🔄 Obteniendo versión Baileys...`);
-      const { version } = await fetchLatestBaileysVersion();
-      console.log(`[INIT-5] ✅ Versión: ${version}`);
-
-      // ✅ WORKAROUND: En reconexiones, forzar modo "limpio"
-      if (tieneCredenciales) {
-        console.log(`[INIT-5.1] 🔧 APLICANDO FIX: Modo reconexión fresca...`);
-        
-        // Modificar el state para forzar re-sincronización
-        if (state && state.creds) {
-          // Esto fuerza a Baileys a re-sincronizar mensajes
-          state.creds.myAppStateKeyId = undefined;
-          console.log(`[INIT-5.1] ✅ State modificado para forzar sync`);
-        }
-      }
-
-      console.log(`[INIT-6] 🔄 Creando socket...`);
-      const sock = makeWASocket({
-        version,
-        auth: state,
-        printQRInTerminal: false,
-        browser: Browsers.ubuntu('Chrome'),
-        logger: pino({ level: 'silent' }),
-        syncFullHistory: true,
-        markOnlineOnConnect: true,
-        getMessage: async (key) => undefined,
-        // ✅ CRÍTICO: Forzar emisión de eventos
-        emitOwnEvents: true,
-        fireInitQueries: true,
-        // ✅ Reducir buffer para forzar eventos inmediatos
-        retryRequestDelayMs: 100,
-        // ✅ Forzar que procese mensajes pendientes
-        shouldSyncHistoryMessage: (msg) => true
-      });
-      console.log(`[INIT-6] ✅ Socket creado`);
-
-      this.sessions.set(sessionKey, sock);
-      this.sessionReady.set(sessionKey, false);
-      console.log(`[INIT-7] ✅ Socket guardado en Map`);
-
-      console.log(`[INIT-8] 🔄 Registrando eventos...`);
-      this.registrarEventosMensajes(sock, empresaId, nombreSesion, sessionKey);
-      console.log(`[INIT-8] ✅ Eventos registrados`);
-
-      sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect, qr } = update;
-        console.log(`[CONNECTION] Estado: ${connection}`);
-
-        if (qr) {
-          console.log(`[CONNECTION] 📱 QR generado`);
-          try {
-            const qrBase64 = await QRCode.toDataURL(qr);
-            this.qrCodes.set(sessionKey, qrBase64);
-            await InstanciaWhatsapp.update(
-              { codigo_qr: qrBase64, conectado: false },
-              { where: { empresa_id: empresaId, nombre_sesion: nombreSesion } }
-            );
-            console.log(`[CONNECTION] ✅ QR guardado`);
-          } catch (qrError) {
-            console.error('[CONNECTION] ❌ Error QR:', qrError);
-          }
-        }
-
-        if (connection === 'open') {
-          this.sessionReady.set(sessionKey, true);
-          
-          // ✅ CRÍTICO: RE-REGISTRAR EVENTOS DESPUÉS DE CONECTAR
-          console.log(`[CONNECTION] 🔧 Aplicando fix post-conexión...`);
-          
-          // Esperar 2 segundos para que WhatsApp se estabilice
-          setTimeout(() => {
-            console.log(`[FIX] 🔄 Re-registrando todos los eventos...`);
+          if (sock.store.contacts) {
+            const contactos = Object.keys(sock.store.contacts);
+            console.log(`   ✅ store.contacts existe`);
+            console.log(`   Total contactos: ${contactos.length}`);
+            console.log(`   Contactos (primeros 5):`, contactos.slice(0, 5));
             
-            // Limpiar eventos anteriores
-            sock._eventosRegistrados = false;
-            
-            // Re-registrar
-            this.registrarEventosMensajes(sock, empresaId, nombreSesion, sessionKey);
-            
-            // ✅ FORZAR flush inmediato
-            if (typeof sock.ev.flush === 'function') {
-              sock.ev.flush();
-              console.log(`[FIX] ✅ Flush forzado`);
-            }
-            
-            // ✅ SIMULAR evento para probar
-            console.log(`[FIX] 🧪 Sistema re-iniciado. Prueba enviar mensaje AHORA.`);
-          }, 2000);
-          
-          console.log(`
-╔════════════════════════════════════════════════════════╗
-║        ✅ WHATSAPP CONECTADO                          ║
-╠════════════════════════════════════════════════════════╣
-║ Número: ${sock.user?.id}
-║ Nombre: ${sock.user?.name || 'N/A'}
-╚════════════════════════════════════════════════════════╝
-          `);
-          
-          await InstanciaWhatsapp.update(
-            { conectado: true, ultima_conexion: new Date(), codigo_qr: null },
-            { where: { empresa_id: empresaId, nombre_sesion: nombreSesion } }
-          );
-          
-          this.qrCodes.delete(sessionKey);
-          
-          // TEST: Enviar mensaje de prueba
-          console.log(`
-╔════════════════════════════════════════════════════════╗
-║  🧪 SISTEMA LISTO PARA RECIBIR MENSAJES               ║
-╠════════════════════════════════════════════════════════╣
-║  Envía un mensaje desde OTRO número a:
-║  ${sock.user?.id}
-║  
-║  Observa la consola para ver si se disparan eventos
-╚════════════════════════════════════════════════════════╝
-          `);
-        }
-
-        if (connection === 'close') {
-          console.log(`[CONNECTION] ❌ Conexión cerrada`);
-          this.sessionReady.set(sessionKey, false);
-          
-          // 🆕 Limpiar health check
-          if (this.healthCheckIntervals.has(sessionKey)) {
-            clearInterval(this.healthCheckIntervals.get(sessionKey));
-            this.healthCheckIntervals.delete(sessionKey);
-          }
-          
-          const statusCode = lastDisconnect?.error?.output?.statusCode;
-          const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-          
-          if (shouldReconnect) {
-            const attempts = this.reconnectAttempts.get(sessionKey) || 0;
-            if (attempts < 5) {
-              this.reconnectAttempts.set(sessionKey, attempts + 1);
-              console.log(`[CONNECTION] 🔄 Reconectando (intento ${attempts + 1}/5)...`);
-              this.sessions.delete(sessionKey);
-              setTimeout(() => this.iniciarSesion(empresaId, nombreSesion), 5000);
+            // Buscar este JID específico
+            if (sock.store.contacts[remoteJid]) {
+              console.log(`   ✅ Contacto encontrado en store:`, sock.store.contacts[remoteJid]);
+            } else {
+              console.log(`   ❌ Este JID NO está en store.contacts`);
             }
           } else {
-            console.log(`[CONNECTION] 🚪 Logout manual`);
-            this.sessions.delete(sessionKey);
-            this.qrCodes.delete(sessionKey);
-            await InstanciaWhatsapp.update(
-              { conectado: false, codigo_qr: null },
-              { where: { empresa_id: empresaId, nombre_sesion: nombreSesion } }
-            );
+            console.log(`   ❌ store.contacts NO existe`);
           }
+        } else {
+          console.log(`   ❌ sock.store NO existe`);
+        }
+      } catch (error) {
+        console.log(`   ❌ Error verificando store:`, error.message);
+      }
+
+      // 🔥 DIAGNÓSTICO 2: Probar múltiples formatos con onWhatsApp
+      const formatos = [
+        { nombre: 'Original', valor: remoteJid.split('@')[0] },
+        { nombre: 'Con +', valor: `+${remoteJid.split('@')[0]}` },
+        { nombre: 'Sin 52', valor: remoteJid.split('@')[0].slice(2) },
+        { nombre: 'Con 521', valor: `521${remoteJid.split('@')[0].slice(3)}` },
+        { nombre: 'Último intento', valor: remoteJid.split('@')[0].replace(/^52/, '521') }
+      ];
+
+      console.log(`\n   🔬 DIAGNÓSTICO 2: Probando formatos`);
+      console.log(`   ================================`);
+      
+      for (const formato of formatos) {
+        try {
+          console.log(`   🧪 Formato "${formato.nombre}": "${formato.valor}"`);
+          const [result] = await sock.onWhatsApp(formato.valor);
+          
+          if (result) {
+            console.log(`      exists: ${result.exists}`);
+            console.log(`      jid: ${result.jid}`);
+            
+            if (result.jid && !result.jid.includes('@lid')) {
+              numeroReal = result.jid.replace(/@.*$/, '');
+              numeroDescifrado = true;
+              console.log(`   ✅ ¡DESCIFRADO EXITOSO!`);
+              console.log(`   🎯 Número real: ${numeroReal}`);
+              console.log(`   🎯 Formato ganador: "${formato.nombre}" (${formato.valor})`);
+              break;
+            } else {
+              console.log(`      ⚠️ Sigue cifrado (@lid)`);
+            }
+          } else {
+            console.log(`      ❌ Sin resultado`);
+          }
+        } catch (error) {
+          console.log(`      ❌ Error: ${error.message}`);
+        }
+      }
+
+      // Si no se pudo descifrar con ningún método
+      if (!numeroReal) {
+        numeroReal = remoteJid.replace(/@.*$/, '');
+        numeroDescifrado = false;
+        console.log(`\n   ❌ NO SE PUDO DESCIFRAR CON NINGÚN MÉTODO`);
+        console.log(`   📌 Usando JID cifrado como fallback: ${numeroReal}`);
+        console.log(`   📌 Nombre del contacto (pushName): ${pushName}`);
+      }
+    }
+    // CASO 3: OTROS FORMATOS (fallback)
+    else {
+      numeroReal = remoteJid.replace(/@.*$/, '');
+      numeroDescifrado = false;
+      console.log(`   ⚠️ Formato desconocido - Extrayendo: ${numeroReal}`);
+    }
+
+    console.log(`\n📞 RESULTADO FINAL:`);
+    console.log(`   JID Original: ${remoteJid}`);
+    console.log(`   Número Final: ${numeroReal}`);
+    console.log(`   ¿Es número real?: ${numeroDescifrado ? 'SÍ ✅' : 'NO ❌ (cifrado)'}`);
+    console.log(`   Nombre (pushName): ${pushName}`);
+
+    return {
+      numeroReal,
+      nombreContacto: pushName,
+      jidOriginal: remoteJid,
+      numeroDescifrado
+    };
+  }
+
+  async iniciarSesion(empresaId, nombreSesion, forzarNuevaConexion = false) {
+    const sessionKey = `${empresaId}_${nombreSesion}`;
+
+    console.log(`\n${'='.repeat(70)}`);
+    console.log(`🔄 INICIANDO SESIÓN`);
+    console.log(`   SessionKey: ${sessionKey}`);
+    console.log(`   EmpresaId: ${empresaId}`);
+    console.log(`   NombreSesion: ${nombreSesion}`);
+    console.log(`   Forzar nueva conexión: ${forzarNuevaConexion}`);
+    console.log(`   Timestamp: ${new Date().toLocaleString()}`);
+    console.log(`${'='.repeat(70)}`);
+
+    try {
+      const { InstanciaWhatsapp } = require('../models');
+
+      let instancia = await InstanciaWhatsapp.findOne({
+        where: {
+          empresa_id: empresaId,
+          nombre_sesion: nombreSesion
         }
       });
 
-      sock.ev.on('creds.update', saveCreds);
-
-      return { success: true, message: 'Sesión iniciada' };
-
+      if (!instancia) {
+        console.log(`📝 Instancia no existe en BD, creándola...`);
+        instancia = await InstanciaWhatsapp.create({
+          empresa_id: empresaId,
+          nombre_sesion: nombreSesion,
+          conectado: false,
+          codigo_qr: null,
+          numero_telefono: null
+        });
+        console.log(`✅ Instancia creada en BD con ID: ${instancia.id}`);
+      } else {
+        console.log(`✅ Instancia encontrada en BD con ID: ${instancia.id}`);
+      }
     } catch (error) {
-      console.error(`❌ Error en iniciarSesion:`, error);
-      this.sessions.delete(sessionKey);
-      throw error;
+      console.error(`❌ Error verificando/creando instancia en BD:`, error);
+      return {
+        success: false,
+        message: `Error en BD: ${error.message}`
+      };
     }
-  }
 
-  async cargarSesionesGuardadas() {
-    console.log('🔄 Cargando sesiones guardadas...');
+    if (!forzarNuevaConexion && this.sessions.has(sessionKey)) {
+      const sock = this.sessions.get(sessionKey);
+      if (sock && sock.user) {
+        console.log(`✅ Sesión ${sessionKey} ya está activa`);
+        return {
+          success: true,
+          message: 'Sesión ya activa',
+          conectado: true,
+          numero: sock.user.id,
+          nombre: sock.user.name
+        };
+      }
+    }
+
+    const sessionPath = path.join(__dirname, '../whatsapp-sessions', `session_${sessionKey}`);
+
     try {
-      const instancias = await InstanciaWhatsapp.findAll();
-      console.log(`📊 Encontradas ${instancias.length} sesiones`);
-
-      for (const instancia of instancias) {
-        console.log(`🔄 Cargando: ${instancia.empresa_id}_${instancia.nombre_sesion}`);
-        await this.iniciarSesion(instancia.empresa_id, instancia.nombre_sesion);
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      }
-
-      console.log('✅ Sesiones cargadas');
+      await fs.mkdir(sessionPath, { recursive: true });
+      console.log(`📁 Carpeta de sesión creada: ${sessionPath}`);
     } catch (error) {
-      console.error('❌ Error cargando sesiones:', error);
-    }
-  }
-
-  obtenerSesion(empresaId, nombreSesion) {
-    return this.sessions.get(`${empresaId}_${nombreSesion}`);
-  }
-
-  async verificarSesionLista(empresaId, nombreSesion) {
-    const sessionKey = `${empresaId}_${nombreSesion}`;
-    const sock = this.sessions.get(sessionKey);
-    const esLista = this.sessionReady.get(sessionKey);
-    return sock && esLista && sock.user !== undefined;
-  }
-
-  async enviarMensaje(empresaId, nombreSesion, numeroDestino, mensaje) {
-    console.log(`📤 Enviando mensaje: ${mensaje.substring(0, 50)}...`);
-    
-    const sock = this.obtenerSesion(empresaId, nombreSesion);
-    if (!sock) throw new Error('Sesión no encontrada');
-
-    const sesionLista = await this.verificarSesionLista(empresaId, nombreSesion);
-    if (!sesionLista) throw new Error('WhatsApp no conectado');
-
-    let numero = numeroDestino.replace(/[^0-9]/g, '');
-    if (!numero.startsWith('52') && numero.length === 10) {
-      numero = '52' + numero;
+      console.error('❌ Error creando carpeta de sesión:', error);
     }
 
-    const jid = `${numero}@s.whatsapp.net`;
-    await sock.sendMessage(jid, { text: mensaje });
-    
-    console.log(`✅ Mensaje enviado a ${jid}`);
-    return { success: true, message: 'Mensaje enviado' };
-  }
+    const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
+    const { version } = await fetchLatestBaileysVersion();
 
-  async cerrarSesion(empresaId, nombreSesion) {
-    const sessionKey = `${empresaId}_${nombreSesion}`;
-    const sock = this.sessions.get(sessionKey);
+    // 🔥🔥🔥 CREAR STORE MANUAL (Compatible con Baileys 7.x) 🔥🔥🔥
+    console.log(`\n💾 Creando store para sincronización de contactos...`);
     
-    if (sock) {
-      // 🆕 Limpiar health check
-      if (this.healthCheckIntervals.has(sessionKey)) {
-        clearInterval(this.healthCheckIntervals.get(sessionKey));
-        this.healthCheckIntervals.delete(sessionKey);
-        console.log(`[HEALTH] 🧹 Health check detenido para ${sessionKey}`);
-      }
+    const store = {
+      contacts: {},
+      chats: {},
+      messages: {},
       
-      // Limpiar polling si existe
-      if (sock._chatPolling) {
-        clearInterval(sock._chatPolling);
-      }
+      bind: function(ev) {
+        console.log(`🔗 Vinculando eventos al store...`);
+        
+        // Escuchar actualización de contactos
+        ev.on('contacts.update', (contacts) => {
+          console.log(`📇 Actualizando ${contacts.length} contacto(s)...`);
+          for (const contact of contacts) {
+            this.contacts[contact.id] = {
+              id: contact.id,
+              name: contact.name || contact.notify || contact.verifiedName,
+              notify: contact.notify,
+              verifiedName: contact.verifiedName
+            };
+            console.log(`   ✅ Contacto: ${contact.id} → ${contact.name || contact.notify}`);
+          }
+        });
+        
+        // Escuchar actualización de chats
+        ev.on('chats.update', (chats) => {
+          for (const chat of chats) {
+            this.chats[chat.id] = chat;
+          }
+        });
+        
+        // Escuchar contactos en SET (batch)
+        ev.on('contacts.set', ({ contacts }) => {
+          console.log(`📇 SET de ${contacts.length} contacto(s)...`);
+          for (const contact of contacts) {
+            this.contacts[contact.id] = {
+              id: contact.id,
+              name: contact.name || contact.notify || contact.verifiedName,
+              notify: contact.notify,
+              verifiedName: contact.verifiedName
+            };
+          }
+          console.log(`   ✅ Total contactos en store: ${Object.keys(this.contacts).length}`);
+        });
+        
+        console.log(`✅ Eventos vinculados correctamente`);
+      },
       
-      await sock.logout();
-      this.sessions.delete(sessionKey);
-      this.qrCodes.delete(sessionKey);
-      this.lastMessageTime.delete(sessionKey);
-      await InstanciaWhatsapp.update(
-        { conectado: false, codigo_qr: null },
-        { where: { empresa_id: empresaId, nombre_sesion: nombreSesion } }
-      );
-      return { success: true, message: 'Sesión cerrada' };
-    }
-    throw new Error('Sesión no encontrada');
-  }
+      readFromFile: function(filePath) {
+        try {
+          if (fsSync.existsSync(filePath)) {
+            const data = JSON.parse(fsSync.readFileSync(filePath, 'utf8'));
+            this.contacts = data.contacts || {};
+            this.chats = data.chats || {};
+            console.log(`✅ Store cargado: ${Object.keys(this.contacts).length} contactos`);
+            return true;
+          }
+        } catch (error) {
+          console.log(`ℹ️  Store nuevo (sin archivo previo)`);
+        }
+        return false;
+      },
+      
+      writeToFile: function(filePath) {
+        try {
+          const data = {
+            contacts: this.contacts,
+            chats: this.chats,
+            timestamp: new Date().toISOString()
+          };
+          fsSync.writeFileSync(filePath, JSON.stringify(data, null, 2));
+        } catch (error) {
+          console.error(`⚠️  Error guardando store: ${error.message}`);
+        }
+      }
+    };
 
-  obtenerQR(empresaId, nombreSesion) {
-    return this.qrCodes.get(`${empresaId}_${nombreSesion}`);
-  }
+    this.stores.set(sessionKey, store);
 
-  async verificarEstado(empresaId, nombreSesion) {
-    const sessionKey = `${empresaId}_${nombreSesion}`;
-    const sock = this.sessions.get(sessionKey);
-    const sesionLista = this.sessionReady.get(sessionKey);
+    // Cargar store previo si existe
+    const storeFilePath = path.join(sessionPath, 'store.json');
+    store.readFromFile(storeFilePath);
+
+    // Auto-guardar cada 30 segundos
+    const saveInterval = setInterval(() => {
+      const currentStore = this.stores.get(sessionKey);
+      if (currentStore) {
+        currentStore.writeToFile(storeFilePath);
+      }
+    }, 30000);
+
+    this.storeIntervals.set(sessionKey, saveInterval);
+
+    console.log(`✅ Store manual creado para: ${sessionKey}`);
+
+    const getMessage = async (key) => {
+      const storeKey = `${key.remoteJid}_${key.id}`;
+      const msg = this.messageStore.get(storeKey);
+      return msg || { conversation: '' };
+    };
+
+    const sock = makeWASocket({
+      version,
+      auth: state,
+      printQRInTerminal: false,
+      browser: Browsers.macOS('Desktop'),
+      syncFullHistory: true,  // ← MANTENER EN TRUE
+      markOnlineOnConnect: true,
+      getMessage: getMessage,
+      defaultQueryTimeoutMs: undefined,
+      keepAliveIntervalMs: 30000,
+    });
+
+    // 🔥🔥🔥 CONECTAR EL STORE AL SOCKET 🔥🔥🔥
+    console.log(`🔗 Conectando store al socket...`);
+    store.bind(sock.ev);
     
+    // 🔥🔥🔥 AGREGAR EL STORE AL SOCKET 🔥🔥🔥
+    sock.store = store;
+    console.log(`✅ Store vinculado exitosamente`);
+
+    this.sessions.set(sessionKey, sock);
+    this.sessionStartTimes.set(sessionKey, new Date());
+
+    console.log(`💾 Sesión guardada en memoria: ${sessionKey}`);
+
+    // ========================================
+    // EVENT HANDLER: messages.upsert
+    // ======================================== 
+    sock.ev.on('messages.upsert', async ({ type, messages }) => {
+      console.log('\n' + '='.repeat(60));
+      console.log(`🔔 EVENTO messages.upsert DISPARADO`);
+      console.log(`   Session: ${sessionKey}`);
+      console.log(`   EmpresaId: ${empresaId}`);
+      console.log(`   Tipo: ${type}`);
+      console.log(`   Cantidad: ${messages.length}`);
+      console.log('='.repeat(60));
+
+      if (type !== 'notify') {
+        console.log(`   ⏭️ Tipo "${type}" ignorado (no es "notify")`);
+        return;
+      }
+
+      for (const msg of messages) {
+        try {
+          const storeKey = `${msg.key.remoteJid}_${msg.key.id}`;
+          this.messageStore.set(storeKey, msg);
+
+          const fromMe = msg.key.fromMe;
+          const remoteJid = msg.key.remoteJid;
+          const messageTimestamp = msg.messageTimestamp;
+          const messageId = msg.key.id;
+
+          console.log(`\n📩 MENSAJE DETECTADO:`);
+          console.log(`   Session: ${sessionKey}`);
+          console.log(`   Usuario de esta sesión: ${sock.user?.id}`);
+          console.log(`   From: ${remoteJid}`);
+          console.log(`   FromMe (flag): ${fromMe}`);
+          console.log(`   ID: ${messageId}`);
+          console.log(`   Timestamp: ${messageTimestamp}`);
+          console.log(`   PushName: ${msg.pushName || 'N/A'}`);
+
+          // ❌ IGNORAR MENSAJES PROPIOS
+          if (fromMe) {
+            console.log(`   ⏭️ IGNORADO (mensaje propio)`);
+            continue;
+          }
+
+          // ❌ IGNORAR GRUPOS (@g.us)
+          if (remoteJid.includes('@g.us')) {
+            console.log(`   ⏭️ IGNORADO (mensaje de GRUPO)`);
+            continue;
+          }
+
+          // ❌ IGNORAR ESTADOS Y NEWSLETTERS
+          if (remoteJid === 'status@broadcast') {
+            console.log(`   ⏭️ Ignorado (estado de WhatsApp)`);
+            continue;
+          }
+
+          if (remoteJid && remoteJid.includes('@newsletter')) {
+            console.log(`   ⏭️ Ignorado (newsletter)`);
+            continue;
+          }
+
+          const sessionStartTime = this.sessionStartTimes.get(sessionKey);
+          const messageDate = new Date(messageTimestamp * 1000);
+
+          console.log(`   📅 Fecha mensaje: ${messageDate.toLocaleString()}`);
+          console.log(`   📅 Fecha inicio: ${sessionStartTime.toLocaleString()}`);
+
+          if (messageDate < sessionStartTime) {
+            console.log(`   ⏭️ Ignorado (mensaje antiguo)`);
+            continue;
+          }
+
+          if (!msg.message) {
+            console.log(`   ⏭️ Ignorado (sin contenido de mensaje)`);
+            continue;
+          }
+
+          let messageText = '';
+          if (msg.message?.conversation) {
+            messageText = msg.message.conversation;
+          } else if (msg.message?.extendedTextMessage?.text) {
+            messageText = msg.message.extendedTextMessage.text;
+          } else if (msg.message?.imageMessage?.caption) {
+            messageText = '[Imagen] ' + (msg.message.imageMessage.caption || '');
+          } else if (msg.message?.videoMessage?.caption) {
+            messageText = '[Video] ' + (msg.message.videoMessage.caption || '');
+          } else if (msg.message?.imageMessage) {
+            messageText = '[Imagen sin caption]';
+          } else if (msg.message?.videoMessage) {
+            messageText = '[Video sin caption]';
+          } else if (msg.message?.audioMessage) {
+            messageText = '[Audio]';
+          } else if (msg.message?.documentMessage) {
+            messageText = '[Documento]';
+          } else if (msg.message?.stickerMessage) {
+            messageText = '[Sticker]';
+          } else {
+            messageText = '[Mensaje multimedia]';
+          }
+
+          console.log(`   💬 Texto: "${messageText}"`);
+
+          // OBTENER NÚMERO REAL Y NOMBRE (PUSHNAME)
+          const infoContacto = await this.obtenerNumeroReal(sock, msg, sessionKey);
+
+          // Guardar en cache con el pushName
+          const cacheKey = `${sessionKey}_${infoContacto.jidOriginal}`;
+          this.contactCache.set(cacheKey, {
+            numero: infoContacto.numeroReal,
+            nombre: infoContacto.nombreContacto,
+            jidOriginal: infoContacto.jidOriginal,
+            numeroDescifrado: infoContacto.numeroDescifrado,
+            timestamp: Date.now()
+          });
+
+          // Cache inverso (número → JID)
+          const jidCacheKey = `${sessionKey}_${infoContacto.numeroReal}`;
+          this.jidCache.set(jidCacheKey, infoContacto.jidOriginal);
+
+          console.log(`💾 Guardado en cache:`);
+          console.log(`   Número: ${infoContacto.numeroReal}`);
+          console.log(`   Nombre: ${infoContacto.nombreContacto}`);
+          console.log(`   JID: ${infoContacto.jidOriginal}`);
+
+          console.log(`\n🚀 ENVIANDO A N8N...`);
+          await this.enviarAWebhook({
+            empresaId,
+            nombreSesion,
+            numeroOrigen: infoContacto.numeroReal,
+            mensaje: messageText,
+            messageId: messageId,
+            timestamp: messageDate.toISOString(),
+            sessionKey: sessionKey,
+            jidOriginal: infoContacto.jidOriginal,
+            pushName: infoContacto.nombreContacto,
+            numeroDescifrado: infoContacto.numeroDescifrado
+          });
+
+        } catch (error) {
+          console.error(`❌ Error procesando mensaje:`, error);
+        }
+      }
+    });
+
+    sock.ev.on('creds.update', saveCreds);
+
+    sock.ev.on('connection.update', async (update) => {
+      const { connection, lastDisconnect, qr } = update;
+
+      if (qr) {
+        console.log(`\n${'*'.repeat(70)}`);
+        console.log(`📱 QR GENERADO`);
+        console.log(`   SessionKey: ${sessionKey}`);
+        console.log(`   Timestamp: ${new Date().toLocaleString()}`);
+        console.log(`${'*'.repeat(70)}`);
+
+        const qrDataUrl = await QRCode.toDataURL(qr);
+        this.qrCodes.set(sessionKey, qrDataUrl);
+        sock.qr = qrDataUrl;
+        console.log(`✅ QR almacenado en memoria (${qrDataUrl.length} caracteres)`);
+
+        console.log(`\n💾 Guardando QR en base de datos...`);
+        try {
+          const { InstanciaWhatsapp } = require('../models');
+          console.log(`   Actualizando InstanciaWhatsapp para empresa_id=${empresaId}, nombre_sesion=${nombreSesion}`);
+
+          const [instancia, created] = await InstanciaWhatsapp.upsert(
+            {
+              empresa_id: empresaId,
+              nombre_sesion: nombreSesion,
+              codigo_qr: qrDataUrl,
+              conectado: false
+            },
+            {
+              returning: true
+            }
+          );
+
+          console.log(`   Operación: ${created ? 'CREATED' : 'UPDATED'}`);
+          console.log(`💾 ✅ QR guardado exitosamente en BD`);
+          console.log(`   Empresa: ${empresaId}`);
+          console.log(`   Longitud QR: ${qrDataUrl.length} caracteres`);
+
+          const verificacion = await InstanciaWhatsapp.findOne({
+            where: { empresa_id: empresaId, nombre_sesion: nombreSesion }
+          });
+          console.log(`   Verificación - QR en BD: ${verificacion?.codigo_qr ? 'PRESENTE' : 'AUSENTE'}`);
+
+        } catch (dbError) {
+          console.error(`❌ Error guardando QR en BD:`);
+          console.error(`   Error: ${dbError.message}`);
+          console.error(`   Stack: ${dbError.stack}`);
+        }
+        console.log(`${'*'.repeat(70)}\n`);
+      }
+
+      if (connection === 'close') {
+        const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+        const statusCode = lastDisconnect?.error?.output?.statusCode;
+        const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+
+        console.log(`\n❌ CONEXIÓN CERRADA`);
+        console.log(`   Status Code: ${statusCode}`);
+        console.log(`   Razón: ${isLoggedOut ? 'Logout manual' : 'Desconexión inesperada'}`);
+        console.log(`   ¿Reintentar?: ${shouldReconnect}`);
+
+        // Limpiar interval de auto-guardado
+        if (this.storeIntervals.has(sessionKey)) {
+          clearInterval(this.storeIntervals.get(sessionKey));
+          this.storeIntervals.delete(sessionKey);
+        }
+
+        try {
+          const { InstanciaWhatsapp } = require('../models');
+          await InstanciaWhatsapp.upsert({
+            empresa_id: empresaId,
+            nombre_sesion: nombreSesion,
+            conectado: false,
+            numero_telefono: null
+          });
+          console.log(`💾 Estado de desconexión guardado en BD`);
+        } catch (dbError) {
+          console.error(`⚠️ Error actualizando BD:`, dbError.message);
+        }
+
+        if (shouldReconnect) {
+          console.log(`\n🔄 RECONEXIÓN AUTOMÁTICA ACTIVADA`);
+          console.log(`   📱 Se generará un nuevo QR en 5 segundos...`);
+
+          setTimeout(async () => {
+            console.log(`\n${'='.repeat(70)}`);
+            console.log(`⚡ EJECUTANDO RECONEXIÓN AUTOMÁTICA`);
+            console.log(`   SessionKey: ${sessionKey}`);
+            console.log(`${'='.repeat(70)}`);
+
+            console.log(`🧹 Limpiando sesión anterior de memoria...`);
+            this.sessions.delete(sessionKey);
+            this.sessionStartTimes.delete(sessionKey);
+            this.qrCodes.delete(sessionKey);
+            this.stores.delete(sessionKey);
+            console.log(`   ✅ Memoria limpiada`);
+
+            try {
+              console.log(`\n📱 Llamando a iniciarSesion() con forzarNuevaConexion=true...`);
+              const resultado = await this.iniciarSesion(empresaId, nombreSesion, true);
+              console.log(`✅ iniciarSesion() completado`);
+              console.log(`   Resultado:`, resultado);
+            } catch (error) {
+              console.error(`\n❌ ERROR EN RECONEXIÓN AUTOMÁTICA`);
+              console.error(`   Error: ${error.message}`);
+            }
+          }, 5000);
+        } else {
+          console.log(`🔒 Sesión desconectada (logout manual)`);
+          console.log(`🗑️ Limpiando sesión completamente...`);
+          this.sessions.delete(sessionKey);
+          this.sessionStartTimes.delete(sessionKey);
+          this.qrCodes.delete(sessionKey);
+          this.stores.delete(sessionKey);
+
+          try {
+            const { InstanciaWhatsapp } = require('../models');
+            await InstanciaWhatsapp.update(
+              {
+                conectado: false,
+                codigo_qr: null,
+                numero_telefono: null
+              },
+              {
+                where: {
+                  empresa_id: empresaId,
+                  nombre_sesion: nombreSesion
+                }
+              }
+            );
+            console.log(`💾 BD limpiada - sesión eliminada completamente`);
+          } catch (dbError) {
+            console.error(`⚠️ Error actualizando BD:`, dbError.message);
+          }
+
+          try {
+            const sessionPath = path.join(__dirname, '../whatsapp-sessions', `session_${sessionKey}`);
+            await fs.rm(sessionPath, { recursive: true, force: true });
+            console.log(`🗑️ Archivos de sesión eliminados del disco`);
+          } catch (error) {
+            console.error(`⚠️ Error eliminando archivos:`, error.message);
+          }
+        }
+      }
+
+      if (connection === 'open') {
+        console.log(`\n${'='.repeat(60)}`);
+        console.log(`✅ WHATSAPP CONECTADO CORRECTAMENTE`);
+        console.log(`   Session: ${sessionKey}`);
+        console.log(`   Usuario: ${sock.user?.id}`);
+        console.log(`   Nombre: ${sock.user?.name}`);
+        console.log(`   Fecha: ${new Date().toLocaleString()}`);
+        console.log(`${'='.repeat(60)}\n`);
+
+        this.sessionStartTimes.set(sessionKey, new Date());
+        this.qrCodes.delete(sessionKey);
+
+        try {
+          const { InstanciaWhatsapp } = require('../models');
+          await InstanciaWhatsapp.upsert({
+            empresa_id: empresaId,
+            nombre_sesion: nombreSesion,
+            conectado: true,
+            ultima_conexion: new Date(),
+            codigo_qr: null,
+            numero_telefono: sock.user?.id || null
+          });
+          console.log(`💾 Estado de conexión guardado en BD para empresa ${empresaId}`);
+          console.log(`📱 Número registrado: ${sock.user?.id}`);
+        } catch (dbError) {
+          console.error(`⚠️ Error actualizando BD:`, dbError.message);
+        }
+
+        try {
+          await sock.sendPresenceUpdate('unavailable');
+          console.log(`📵 Cliente marcado como "unavailable" - recibirá mensajes en tiempo real`);
+        } catch (error) {
+          console.error(`⚠️ Error marcando presencia:`, error.message);
+        }
+      }
+    });
+
     return {
-      existe: !!sock,
-      conectado: sesionLista && sock?.user !== undefined,
-      tieneQR: this.qrCodes.has(sessionKey),
-      numeroConectado: sock?.user?.id || null,
-      lista: sesionLista
+      success: true,
+      qr: sock.qr,
+      message: 'Sesión iniciada - esperando conexión'
     };
   }
 
-  obtenerEstadoGeneral() {
-    const estados = [];
-    for (const [sessionKey, sock] of this.sessions.entries()) {
-      const esLista = this.sessionReady.get(sessionKey);
-      estados.push({
-        sessionKey,
-        conectado: esLista && sock?.user !== undefined,
-        numero: sock?.user?.id || null,
-        nombre: sock?.user?.name || null,
-        tieneQR: this.qrCodes.has(sessionKey)
-      });
+  async enviarAWebhook(datos) {
+    const webhookUrl = 'http://localhost:5678/webhook/whatsapp-mensaje';
+
+    const payload = {
+      empresaId: datos.empresaId,
+      nombreSesion: datos.nombreSesion,
+      numeroOrigen: datos.numeroOrigen,
+      mensaje: datos.mensaje,
+      messageId: datos.messageId,
+      timestamp: datos.timestamp,
+      sessionKey: datos.sessionKey,
+      jidOriginal: datos.jidOriginal,
+      pushName: datos.pushName,
+      numeroDescifrado: datos.numeroDescifrado
+    };
+
+  console.log(`📍 URL: ${webhookUrl}`);
+  console.log(`📦 Payload:`, JSON.stringify(payload, null, 2));
+
+  try {
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (response.ok) {
+      const data = await response.text();
+      console.log(`✅ N8N respondió correctamente`);
+      console.log(`📥 Respuesta:`, data);
+    } else {
+      console.log(`⚠️ N8N status: ${response.status}`);
+      const errorText = await response.text();
+      console.log(`📥 Error:`, errorText);
     }
-    return estados;
+  } catch (error) {
+    console.error(`❌ Error enviando a N8N:`, error.message);
+  }
+}
+async verificarEstado(empresaId, nombreSesion) {
+const sessionKey = `${empresaId}_${nombreSesion}`;
+const sock = this.sessions.get(sessionKey);
+if (!sock || !sock.user) {
+  const qr = this.qrCodes.get(sessionKey);
+  if (qr) {
+    return {
+      conectado: false,
+      qr: qr,
+      mensaje: 'Esperando escaneo de QR',
+      existe: true
+    };
+  }
+  return {
+    conectado: false,
+    mensaje: 'Sesión no iniciada',
+    existe: false
+  };
+}
+
+return {
+  conectado: true,
+  numero: sock.user.id,
+  nombre: sock.user.name,
+  existe: true
+};
+}
+obtenerQR(empresaId, nombreSesion) {
+const sessionKey = `${empresaId}_${nombreSesion}`;
+const qr = this.qrCodes.get(sessionKey);
+if (qr) {
+  return { success: true, qr };
+}
+
+return {
+  success: false,
+  message: 'QR no disponible - sesión ya conectada o no iniciada'
+};
+}
+
+async enviarMensaje(empresaId, nombreSesion, numeroDestino, mensaje) {
+  const sessionKey = `${empresaId}_${nombreSesion}`;
+  console.log(`\n${'='.repeat(60)}`);
+  console.log(`📤 ENVIANDO MENSAJE`);
+  console.log(`   SessionKey: ${sessionKey}`);
+  console.log(`   NumeroDestino: ${numeroDestino}`);
+  console.log(`   Mensaje: ${mensaje?.substring(0, 100)}`);
+  console.log(`${'='.repeat(60)}`);
+
+  const sock = this.sessions.get(sessionKey);
+
+  if (!sock || !sock.user) {
+    console.log(`❌ Sesión no encontrada o no conectada`);
+    throw new Error('Sesión no conectada');
   }
 
-  getDisconnectReason(code) {
-    const reasons = {
-      401: 'Logout',
-      408: 'Conexión perdida',
-      411: 'Conflicto',
-      428: 'Cerrada',
-      440: 'Reemplazo',
-      500: 'Error servidor',
-      515: 'Reintentar',
-    };
-    return reasons[code] || `Desconocido (${code})`;
+  console.log(`✅ Sesión encontrada - Usuario: ${sock.user.id}`);
+
+  let jidFinal = null;
+
+  // PRIORIDAD 1: Buscar JID en cache (el más confiable)
+  const jidCacheKey = `${sessionKey}_${numeroDestino}`;
+  if (this.jidCache.has(jidCacheKey)) {
+    jidFinal = this.jidCache.get(jidCacheKey);
+    console.log(`✅ JID encontrado en jidCache: ${jidFinal}`);
   }
+
+  // PRIORIDAD 2: Buscar en contactCache
+  if (!jidFinal) {
+    for (const [key, value] of this.contactCache.entries()) {
+      if (value.numero === numeroDestino && key.startsWith(sessionKey)) {
+        jidFinal = value.jidOriginal;
+        console.log(`✅ JID encontrado en contactCache: ${jidFinal}`);
+        break;
+      }
+    }
+  }
+
+  // PRIORIDAD 3: Si ya viene con @, usarlo directamente
+  if (!jidFinal && numeroDestino.includes('@')) {
+    jidFinal = numeroDestino;
+    console.log(`✅ JID completo recibido: ${jidFinal}`);
+  }
+
+  // FALLBACK: Formato estándar @s.whatsapp.net
+  if (!jidFinal) {
+    jidFinal = `${numeroDestino}@s.whatsapp.net`;
+    console.log(`⚠️ JID no encontrado en cache, usando estándar: ${jidFinal}`);
+  }
+
+  console.log(`\n📱 JID FINAL PARA ENVÍO: ${jidFinal}`);
+
+  // 🔥 FUNCIÓN CON TIMEOUT
+  const enviarConTimeout = (jid, contenido, timeout = 10000) => {
+    return Promise.race([
+      sock.sendMessage(jid, contenido),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Timeout enviando mensaje')), timeout)
+      )
+    ]);
+  };
+
+  try {
+    await enviarConTimeout(jidFinal, { text: mensaje }, 10000); // 10 segundos timeout
+    console.log(`✅ Mensaje enviado correctamente`);
+    console.log(`${'='.repeat(60)}\n`);
+    return { success: true, message: 'Mensaje enviado' };
+  } catch (error) {
+    console.error(`❌ Error al enviar mensaje:`, error.message);
+
+    if (jidFinal.includes('@lid')) {
+      console.log(`\n⚠️ Fallo con JID cifrado, intentando con formato estándar...`);
+      const jidEstandar = `${numeroDestino.replace(/@.*$/, '')}@s.whatsapp.net`;
+
+      try {
+        await enviarConTimeout(jidEstandar, { text: mensaje }, 10000);
+        console.log(`✅ Mensaje enviado con JID estándar: ${jidEstandar}`);
+        console.log(`${'='.repeat(60)}\n`);
+        return { success: true, message: 'Mensaje enviado (fallback)' };
+      } catch (fallbackError) {
+        console.error(`❌ Fallback también falló:`, fallbackError.message);
+        throw new Error(`No se pudo enviar el mensaje: ${fallbackError.message}`);
+      }
+    } else {
+      throw new Error(`Error al enviar mensaje: ${error.message}`);
+    }
+  }
+}
+
+// 🔥 TAMBIÉN ACTUALIZA enviarImagen con el mismo patrón
+async enviarImagen(empresaId, nombreSesion, numeroDestino, imagenUrl, caption) {
+  const sessionKey = `${empresaId}_${nombreSesion}`;
+  
+  console.log(`\n${'='.repeat(60)}`);
+  console.log(`📸 ENVIANDO IMAGEN`);
+  console.log(`   SessionKey: ${sessionKey}`);
+  console.log(`   NumeroDestino: ${numeroDestino}`);
+  console.log(`   ImagenUrl: ${imagenUrl}`);
+  console.log(`   Caption: ${caption?.substring(0, 100)}`);
+  console.log(`${'='.repeat(60)}`);
+
+  const sock = this.sessions.get(sessionKey);
+
+  if (!sock || !sock.user) {
+    console.log(`❌ Sesión no encontrada o no conectada`);
+    throw new Error('Sesión no conectada');
+  }
+
+  console.log(`✅ Sesión encontrada - Usuario: ${sock.user.id}`);
+
+  let jidFinal = null;
+
+  const jidCacheKey = `${sessionKey}_${numeroDestino}`;
+  if (this.jidCache.has(jidCacheKey)) {
+    jidFinal = this.jidCache.get(jidCacheKey);
+    console.log(`✅ JID encontrado en jidCache: ${jidFinal}`);
+  }
+
+  if (!jidFinal) {
+    for (const [key, value] of this.contactCache.entries()) {
+      if (value.numero === numeroDestino && key.startsWith(sessionKey)) {
+        jidFinal = value.jidOriginal;
+        console.log(`✅ JID encontrado en contactCache: ${jidFinal}`);
+        break;
+      }
+    }
+  }
+
+  if (!jidFinal && numeroDestino.includes('@')) {
+    jidFinal = numeroDestino;
+    console.log(`✅ JID completo recibido: ${jidFinal}`);
+  }
+
+  if (!jidFinal) {
+    jidFinal = `${numeroDestino}@s.whatsapp.net`;
+    console.log(`⚠️ JID no encontrado en cache, usando estándar: ${jidFinal}`);
+  }
+
+  console.log(`\n📱 JID FINAL PARA ENVÍO: ${jidFinal}`);
+
+  // 🔥 FUNCIÓN CON TIMEOUT
+  const enviarConTimeout = (jid, contenido, timeout = 10000) => {
+    return Promise.race([
+      sock.sendMessage(jid, contenido),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Timeout enviando imagen')), timeout)
+      )
+    ]);
+  };
+
+  try {
+    await enviarConTimeout(jidFinal, {
+      image: { url: imagenUrl },
+      caption: caption
+    }, 10000);
+    
+    console.log(`✅ Imagen enviada correctamente`);
+    console.log(`${'='.repeat(60)}\n`);
+    return { success: true, message: 'Imagen enviada' };
+  } catch (error) {
+    console.error(`❌ Error al enviar imagen:`, error.message);
+
+    if (jidFinal.includes('@lid')) {
+      console.log(`\n⚠️ Fallo con JID cifrado, intentando con formato estándar...`);
+      const jidEstandar = `${numeroDestino.replace(/@.*$/, '')}@s.whatsapp.net`;
+
+      try {
+        await enviarConTimeout(jidEstandar, {
+          image: { url: imagenUrl },
+          caption: caption
+        }, 10000);
+        console.log(`✅ Imagen enviada con JID estándar: ${jidEstandar}`);
+        console.log(`${'='.repeat(60)}\n`);
+        return { success: true, message: 'Imagen enviada (fallback)' };
+      } catch (fallbackError) {
+        console.error(`❌ Fallback también falló:`, fallbackError.message);
+        throw new Error(`No se pudo enviar la imagen: ${fallbackError.message}`);
+      }
+    } else {
+      throw new Error(`Error al enviar imagen: ${error.message}`);
+    }
+  }
+}
+
+
+async cerrarSesion(empresaId, nombreSesion) {
+const sessionKey = `${empresaId}_${nombreSesion}`;
+const sock = this.sessions.get(sessionKey);
+if (sock) {
+  await sock.logout();
+  console.log(`🔒 Logout ejecutado para ${sessionKey}`);
+}
+
+// Limpiar interval de auto-guardado
+if (this.storeIntervals.has(sessionKey)) {
+  clearInterval(this.storeIntervals.get(sessionKey));
+  this.storeIntervals.delete(sessionKey);
+  console.log(`⏱️ Interval de guardado detenido`);
+}
+
+this.sessions.delete(sessionKey);
+this.sessionStartTimes.delete(sessionKey);
+this.qrCodes.delete(sessionKey);
+this.stores.delete(sessionKey);
+
+for (const key of this.contactCache.keys()) {
+  if (key.startsWith(sessionKey)) {
+    this.contactCache.delete(key);
+  }
+}
+
+for (const key of this.jidCache.keys()) {
+  if (key.startsWith(sessionKey)) {
+    this.jidCache.delete(key);
+  }
+}
+
+try {
+  const { InstanciaWhatsapp } = require('../models');
+  await InstanciaWhatsapp.update(
+    {
+      conectado: false,
+      codigo_qr: null,
+      numero_telefono: null
+    },
+    {
+      where: {
+        empresa_id: empresaId,
+        nombre_sesion: nombreSesion
+      }
+    }
+  );
+  console.log(`💾 BD actualizada - sesión cerrada`);
+} catch (dbError) {
+  console.error(`⚠️ Error actualizando BD:`, dbError.message);
+}
+
+try {
+  const sessionPath = path.join(__dirname, '../whatsapp-sessions', `session_${sessionKey}`);
+  await fs.rm(sessionPath, { recursive: true, force: true });
+  console.log(`🗑️ Archivos de sesión eliminados`);
+} catch (error) {
+  console.error(`⚠️ Error eliminando archivos:`, error.message);
+}
+
+return { success: true, message: 'Sesión cerrada completamente' };
+}
+async cargarSesionesGuardadas() {
+try {
+const sessionsDir = path.join(__dirname, '../whatsapp-sessions');
+console.log(`📂 Buscando sesiones en: ${sessionsDir}`);
+try {
+await fs.access(sessionsDir);
+} catch {
+console.log(`ℹ️  No hay carpeta de sesiones - se creará al iniciar sesión`);
+return { success: true, message: 'No hay sesiones previas' };
+}
+  const files = await fs.readdir(sessionsDir);
+  const sessionFolders = files.filter(f => f.startsWith('session_'));
+
+  if (sessionFolders.length === 0) {
+    console.log(`ℹ️  No hay sesiones guardadas`);
+    return { success: true, message: 'No hay sesiones previas' };
+  }
+
+  console.log(`✅ Encontradas ${sessionFolders.length} sesión(es) guardada(s)`);
+  console.log(`   ${sessionFolders.join(', ')}`);
+  console.log(`ℹ️  Se reconectarán automáticamente al llamar iniciarSesion()`);
+
+  return {
+    success: true,
+    sesiones: sessionFolders,
+    message: `${sessionFolders.length} sesión(es) disponibles para reconexión`
+  };
+} catch (error) {
+  console.error(`❌ Error al cargar sesiones:`, error);
+  return { success: false, error: error.message };
+}
+}
+obtenerClienteActivo(empresaId, nombreSesion) {
+const sessionKey = `${empresaId}_${nombreSesion}`;
+const sock = this.sessions.get(sessionKey);
+if (!sock || !sock.user) {
+return null;
+}
+return sock;
+}
+obtenerEstadoSesion(empresaId, nombreSesion) {
+const sessionKey = `${empresaId}_${nombreSesion}`;
+const sock = this.sessions.get(sessionKey);
+const qr = this.qrCodes.get(sessionKey);
+return {
+existe: this.sessions.has(sessionKey),
+conectado: sock && sock.user ? true : false,
+tieneQR: !!qr,
+usuario: sock?.user || null
+};
+}
+
+
+
+async enviarImagen(empresaId, nombreSesion, numeroDestino, imagenUrl, caption) {
+  const sessionKey = `${empresaId}_${nombreSesion}`;
+  
+  console.log(`\n${'='.repeat(60)}`);
+  console.log(`📸 ENVIANDO IMAGEN`);
+  console.log(`   SessionKey: ${sessionKey}`);
+  console.log(`   NumeroDestino: ${numeroDestino}`);
+  console.log(`   ImagenUrl: ${imagenUrl}`);
+  console.log(`   Caption: ${caption?.substring(0, 100)}`);
+  console.log(`${'='.repeat(60)}`);
+
+  const sock = this.sessions.get(sessionKey);
+
+  if (!sock || !sock.user) {
+    console.log(`❌ Sesión no encontrada o no conectada`);
+    throw new Error('Sesión no conectada');
+  }
+
+  console.log(`✅ Sesión encontrada - Usuario: ${sock.user.id}`);
+
+  let jidFinal = null;
+
+  // PRIORIDAD 1: Buscar JID en cache
+  const jidCacheKey = `${sessionKey}_${numeroDestino}`;
+  if (this.jidCache.has(jidCacheKey)) {
+    jidFinal = this.jidCache.get(jidCacheKey);
+    console.log(`✅ JID encontrado en jidCache: ${jidFinal}`);
+  }
+
+  // PRIORIDAD 2: Buscar en contactCache
+  if (!jidFinal) {
+    for (const [key, value] of this.contactCache.entries()) {
+      if (value.numero === numeroDestino && key.startsWith(sessionKey)) {
+        jidFinal = value.jidOriginal;
+        console.log(`✅ JID encontrado en contactCache: ${jidFinal}`);
+        break;
+      }
+    }
+  }
+
+  // PRIORIDAD 3: Si ya viene con @, usarlo directamente
+  if (!jidFinal && numeroDestino.includes('@')) {
+    jidFinal = numeroDestino;
+    console.log(`✅ JID completo recibido: ${jidFinal}`);
+  }
+
+  // FALLBACK: Formato estándar
+  if (!jidFinal) {
+    jidFinal = `${numeroDestino}@s.whatsapp.net`;
+    console.log(`⚠️ JID no encontrado en cache, usando estándar: ${jidFinal}`);
+  }
+
+  console.log(`\n📱 JID FINAL PARA ENVÍO: ${jidFinal}`);
+
+  try {
+    await sock.sendMessage(jidFinal, {
+      image: { url: imagenUrl },
+      caption: caption
+    });
+    
+    console.log(`✅ Imagen enviada correctamente`);
+    console.log(`${'='.repeat(60)}\n`);
+    return { success: true, message: 'Imagen enviada' };
+  } catch (error) {
+    console.error(`❌ Error al enviar imagen:`, error.message);
+
+    if (jidFinal.includes('@lid')) {
+      console.log(`\n⚠️ Fallo con JID cifrado, intentando con formato estándar...`);
+      const jidEstandar = `${numeroDestino.replace(/@.*$/, '')}@s.whatsapp.net`;
+
+      try {
+        await sock.sendMessage(jidEstandar, {
+          image: { url: imagenUrl },
+          caption: caption
+        });
+        console.log(`✅ Imagen enviada con JID estándar: ${jidEstandar}`);
+        console.log(`${'='.repeat(60)}\n`);
+        return { success: true, message: 'Imagen enviada (fallback)' };
+      } catch (fallbackError) {
+        console.error(`❌ Fallback también falló:`, fallbackError.message);
+        throw new Error(`No se pudo enviar la imagen: ${fallbackError.message}`);
+      }
+    } else {
+      throw new Error(`Error al enviar imagen: ${error.message}`);
+    }
+  }
+}
+
 }
 
 module.exports = new WhatsAppService();

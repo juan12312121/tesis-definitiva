@@ -1,0 +1,470 @@
+{
+  "name": "Ecommerce - Sistema Completo (Webhook Único)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ecommerce-eventos",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-central",
+      "name": "Webhook Central",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 500]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.evento}}",
+              "operation": "equals",
+              "value2": "ORDEN_CREADA"
+            }
+          ]
+        }
+      },
+      "id": "switch-evento",
+      "name": "Switch - Tipo de Evento",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [450, 500],
+      "parameters": {
+        "mode": "expression",
+        "output": "multiple",
+        "rules": {
+          "rules": [
+            {
+              "outputKey": "orden_creada",
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{$json.evento}}",
+                    "operation": "equals",
+                    "value2": "ORDEN_CREADA"
+                  }
+                ]
+              }
+            },
+            {
+              "outputKey": "stock_bajo",
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{$json.evento}}",
+                    "operation": "equals",
+                    "value2": "STOCK_BAJO"
+                  }
+                ]
+              }
+            },
+            {
+              "outputKey": "orden_actualizada",
+              "conditions": {
+                "string": [
+                  {
+                    "value1": "={{$json.evento}}",
+                    "operation": "equals",
+                    "value2": "ORDEN_ACTUALIZADA"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "id": "schedule-sync",
+      "name": "Schedule - Sync Cada 6h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 1100]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=http://localhost:8080/api/ordenes/{{$json.ordenId}}",
+        "authentication": "none",
+        "options": {}
+      },
+      "id": "http-orden-creada",
+      "name": "HTTP - Obtener Orden",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://localhost:8080/api/proveedores",
+        "authentication": "none",
+        "options": {}
+      },
+      "id": "http-proveedores",
+      "name": "HTTP - Obtener Proveedores",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 500]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=http://localhost:8080/api/ordenes/{{$json.ordenId}}",
+        "authentication": "none",
+        "options": {}
+      },
+      "id": "http-orden-estado",
+      "name": "HTTP - Obtener Orden Estado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 700]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://localhost:8080/api/productos/stock-bajo",
+        "authentication": "none",
+        "options": {}
+      },
+      "id": "http-stock-bajo",
+      "name": "HTTP - Stock Bajo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [450, 1100]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://localhost:8080/api/ordenes",
+        "authentication": "none",
+        "options": {}
+      },
+      "id": "http-ordenes",
+      "name": "HTTP - Todas Órdenes",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [450, 1250]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// PROCESAR CONFIRMACIÓN DE ORDEN\n// ============================================\n\nconst orden = $input.item.json.data;\n\n// HTML de productos\nlet productosHtml = '<table style=\"width:100%; border-collapse: collapse; margin: 20px 0;\">';\nproductosHtml += '<thead><tr style=\"background-color: #f3f4f6;\">';\nproductosHtml += '<th style=\"padding: 12px; text-align: left;\">Producto</th>';\nproductosHtml += '<th style=\"padding: 12px; text-align: center;\">Cantidad</th>';\nproductosHtml += '<th style=\"padding: 12px; text-align: right;\">Precio</th>';\nproductosHtml += '<th style=\"padding: 12px; text-align: right;\">Subtotal</th>';\nproductosHtml += '</tr></thead><tbody>';\n\n(orden.detalles || []).forEach(item => {\n  productosHtml += '<tr style=\"border-bottom: 1px solid #e5e7eb;\">';\n  productosHtml += `<td style=\"padding: 12px;\">${item.productoNombre}</td>`;\n  productosHtml += `<td style=\"padding: 12px; text-align: center;\">${item.cantidad}</td>`;\n  productosHtml += `<td style=\"padding: 12px; text-align: right;\">$${item.precioUnitario.toFixed(2)}</td>`;\n  productosHtml += `<td style=\"padding: 12px; text-align: right; font-weight: bold;\">$${item.subtotal.toFixed(2)}</td>`;\n  productosHtml += '</tr>';\n});\n\nproductosHtml += '</tbody></table>';\n\n// Resumen\nconst resumenHtml = `\n  <div style=\"background-color: #f9fafb; padding: 20px; border-radius: 8px; margin: 20px 0;\">\n    <div style=\"display: flex; justify-content: space-between; margin-bottom: 10px;\">\n      <span>Subtotal:</span>\n      <span style=\"font-weight: bold;\">$${orden.subtotal.toFixed(2)}</span>\n    </div>\n    <div style=\"display: flex; justify-content: space-between; margin-bottom: 10px;\">\n      <span>IVA (16%):</span>\n      <span style=\"font-weight: bold;\">$${orden.iva.toFixed(2)}</span>\n    </div>\n    <div style=\"display: flex; justify-content: space-between; margin-bottom: 10px;\">\n      <span>Envío:</span>\n      <span style=\"font-weight: bold;\">$${orden.costoEnvio.toFixed(2)}</span>\n    </div>\n    ${orden.descuento > 0 ? `\n    <div style=\"display: flex; justify-content: space-between; margin-bottom: 10px; color: #059669;\">\n      <span>Descuento:</span>\n      <span style=\"font-weight: bold;\">-$${orden.descuento.toFixed(2)}</span>\n    </div>` : ''}\n    <div style=\"display: flex; justify-content: space-between; padding-top: 10px; border-top: 2px solid #d1d5db; margin-top: 10px;\">\n      <span style=\"font-size: 18px; font-weight: bold;\">Total:</span>\n      <span style=\"font-size: 18px; font-weight: bold; color: #059669;\">$${orden.total.toFixed(2)}</span>\n    </div>\n  </div>\n`;\n\nconst emailHtml = `\n<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UTF-8\">\n  <title>Confirmación de Compra</title>\n</head>\n<body style=\"font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;\">\n  <div style=\"background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;\">\n    <h1 style=\"color: white; margin: 0;\">¡Gracias por tu compra! 🎉</h1>\n  </div>\n  \n  <div style=\"background-color: white; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 10px 10px;\">\n    <p style=\"font-size: 16px;\">Hola <strong>${orden.usuarioNombre}</strong>,</p>\n    <p>Tu orden ha sido confirmada exitosamente.</p>\n    \n    <div style=\"background-color: #f3f4f6; padding: 15px; border-radius: 8px; margin: 20px 0;\">\n      <p style=\"margin: 5px 0;\"><strong>Número de Orden:</strong> ${orden.numeroOrden}</p>\n      <p style=\"margin: 5px 0;\"><strong>Fecha:</strong> ${new Date(orden.fechaOrden).toLocaleDateString('es-MX')}</p>\n      <p style=\"margin: 5px 0;\"><strong>Estado:</strong> <span style=\"background-color: #10b981; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px;\">${orden.estado}</span></p>\n    </div>\n    \n    <h3 style=\"color: #667eea;\">Productos</h3>\n    ${productosHtml}\n    \n    <h3 style=\"color: #667eea;\">Resumen</h3>\n    ${resumenHtml}\n    \n    <div style=\"background-color: #eff6ff; padding: 20px; border-left: 4px solid #3b82f6; margin: 30px 0;\">\n      <p style=\"margin: 0; font-weight: bold; color: #1e40af;\">📦 Próximos pasos</p>\n      <p style=\"margin: 10px 0 0 0;\">Te notificaremos cuando tu pedido sea enviado.</p>\n    </div>\n    \n    <div style=\"text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;\">\n      <p style=\"color: #6b7280; font-size: 14px;\">📧 soporte@ecommerce.com | 📱 668-123-4567</p>\n    </div>\n  </div>\n</body>\n</html>\n`;\n\nreturn {\n  email: orden.usuarioEmail,\n  subject: `🎉 Confirmación de Compra - Orden #${orden.numeroOrden}`,\n  html: emailHtml,\n  slackChannel: '#ventas',\n  slackText: `🎉 *Nueva Venta*\\n*Orden:* ${orden.numeroOrden}\\n*Cliente:* ${orden.usuarioNombre}\\n*Total:* $${orden.total.toFixed(2)}`,\n  sheetName: 'Ventas',\n  sheetData: [\n    new Date().toLocaleDateString('es-MX'),\n    new Date().toLocaleTimeString('es-MX'),\n    orden.numeroOrden,\n    orden.usuarioNombre,\n    orden.usuarioEmail,\n    orden.total,\n    orden.estado\n  ]\n};"
+      },
+      "id": "code-orden-creada",
+      "name": "Code - Orden Creada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// PROCESAR STOCK BAJO\n// ============================================\n\nconst data = $input.item.json;\nconst producto = data.productoId ? data : data.data;\nconst proveedoresData = $input.all()[1]?.json?.data || [];\n\nconst porcentajeStock = (producto.stock / producto.stockMinimo) * 100;\nlet urgencia = 'MEDIA';\nlet colorUrgencia = '#f59e0b';\n\nif (producto.stock === 0) {\n  urgencia = 'CRÍTICA';\n  colorUrgencia = '#dc2626';\n} else if (porcentajeStock < 50) {\n  urgencia = 'ALTA';\n  colorUrgencia = '#ea580c';\n}\n\nconst emailHtml = `\n<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UTF-8\">\n  <title>Alerta Stock Bajo</title>\n</head>\n<body style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;\">\n  <div style=\"background-color: ${colorUrgencia}; padding: 20px; text-align: center; border-radius: 10px 10px 0 0;\">\n    <h1 style=\"color: white; margin: 0;\">⚠️ ALERTA DE STOCK BAJO</h1>\n  </div>\n  \n  <div style=\"background-color: white; padding: 30px; border: 1px solid #e5e7eb;\">\n    <div style=\"background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin-bottom: 20px;\">\n      <p style=\"margin: 0; font-weight: bold; color: #92400e;\">Urgencia: ${urgencia}</p>\n    </div>\n    \n    <h2 style=\"color: #1f2937;\">Producto: ${producto.nombre}</h2>\n    \n    <table style=\"width: 100%; border-collapse: collapse; margin: 20px 0;\">\n      <tr style=\"border-bottom: 1px solid #e5e7eb;\">\n        <td style=\"padding: 12px 0; font-weight: bold;\">Stock Actual:</td>\n        <td style=\"padding: 12px 0; color: ${colorUrgencia}; font-weight: bold;\">${producto.stock} unidades</td>\n      </tr>\n      <tr style=\"border-bottom: 1px solid #e5e7eb;\">\n        <td style=\"padding: 12px 0; font-weight: bold;\">Stock Mínimo:</td>\n        <td style=\"padding: 12px 0;\">${producto.stockMinimo} unidades</td>\n      </tr>\n      <tr>\n        <td style=\"padding: 12px 0; font-weight: bold;\">Precio:</td>\n        <td style=\"padding: 12px 0;\">$${producto.precio}</td>\n      </tr>\n    </table>\n    \n    <div style=\"background-color: #dbeafe; padding: 20px; border-radius: 8px; margin: 30px 0;\">\n      <h3 style=\"color: #1e40af; margin-top: 0;\">📋 Recomendación</h3>\n      <p style=\"margin: 0;\">Cantidad sugerida: <strong>${producto.stockMinimo * 2} unidades</strong></p>\n    </div>\n  </div>\n</body>\n</html>\n`;\n\nconst outputs = [];\nconst emailsEnviados = new Set();\n\nif (proveedoresData.length > 0) {\n  proveedoresData.forEach(proveedor => {\n    if (!emailsEnviados.has(proveedor.email)) {\n      emailsEnviados.add(proveedor.email);\n      outputs.push({\n        email: proveedor.email,\n        subject: `⚠️ URGENTE - Stock Bajo: ${producto.nombre}`,\n        html: emailHtml,\n        slackChannel: '#inventario',\n        slackText: `⚠️ *Stock Bajo*\\n*Producto:* ${producto.nombre}\\n*Stock:* ${producto.stock}\\n*Urgencia:* ${urgencia}\\n*Proveedor notificado:* ${proveedor.nombre}`,\n        sheetName: 'Stock Bajo',\n        sheetData: [\n          new Date().toLocaleDateString('es-MX'),\n          new Date().toLocaleTimeString('es-MX'),\n          producto.nombre,\n          producto.stock,\n          urgencia,\n          proveedor.nombre\n        ]\n      });\n    }\n  });\n} else {\n  outputs.push({\n    email: 'almacen@ecommerce.com',\n    subject: `⚠️ URGENTE - Stock Bajo: ${producto.nombre}`,\n    html: emailHtml,\n    slackChannel: '#inventario',\n    slackText: `⚠️ *Stock Bajo*\\n*Producto:* ${producto.nombre}\\n*Stock:* ${producto.stock}\\n*Urgencia:* ${urgencia}`,\n    sheetName: 'Stock Bajo',\n    sheetData: [\n      new Date().toLocaleDateString('es-MX'),\n      new Date().toLocaleTimeString('es-MX'),\n      producto.nombre,\n      producto.stock,\n      urgencia,\n      'Sin proveedor'\n    ]\n  });\n}\n\nreturn outputs;"
+      },
+      "id": "code-stock-bajo",
+      "name": "Code - Stock Bajo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// PROCESAR CAMBIO DE ESTADO\n// ============================================\n\nconst orden = $input.item.json.data;\n\nconst estadoConfig = {\n  'PENDIENTE': { emoji: '⏳', color: '#f59e0b', titulo: 'Orden Pendiente', mensaje: 'Tu orden está siendo procesada.' },\n  'CONFIRMADA': { emoji: '✅', color: '#10b981', titulo: 'Orden Confirmada', mensaje: 'Tu orden ha sido confirmada.' },\n  'PROCESANDO': { emoji: '📦', color: '#3b82f6', titulo: 'Orden en Proceso', mensaje: 'Estamos preparando tu pedido.' },\n  'ENVIADA': { emoji: '🚚', color: '#8b5cf6', titulo: 'Orden Enviada', mensaje: 'Tu pedido está en camino.' },\n  'ENTREGADA': { emoji: '🎉', color: '#059669', titulo: 'Orden Entregada', mensaje: '¡Tu pedido ha sido entregado!' },\n  'CANCELADA': { emoji: '❌', color: '#dc2626', titulo: 'Orden Cancelada', mensaje: 'Tu orden ha sido cancelada.' }\n};\n\nconst config = estadoConfig[orden.estado] || estadoConfig['PENDIENTE'];\n\n// Timeline\nlet timelineHtml = '<div style=\"margin: 30px 0;\">';\nconst estados = ['PENDIENTE', 'CONFIRMADA', 'PROCESANDO', 'ENVIADA', 'ENTREGADA'];\nconst estadoIndex = estados.indexOf(orden.estado);\n\nestados.forEach((estado, index) => {\n  const isCompleted = index <= estadoIndex;\n  const bgColor = isCompleted ? '#10b981' : '#e5e7eb';\n  const textColor = isCompleted ? '#065f46' : '#6b7280';\n  \n  timelineHtml += `\n    <div style=\"display: flex; align-items: center; margin-bottom: 15px;\">\n      <div style=\"width: 40px; height: 40px; border-radius: 50%; background-color: ${bgColor}; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;\">\n        ${isCompleted ? '✓' : index + 1}\n      </div>\n      <div style=\"margin-left: 15px; font-weight: ${estado === orden.estado ? 'bold' : 'normal'}; color: ${textColor};\">${estado}</div>\n    </div>\n  `;\n});\ntimelineHtml += '</div>';\n\nconst emailHtml = `\n<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UTF-8\">\n  <title>Actualización de Orden</title>\n</head>\n<body style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;\">\n  <div style=\"background-color: ${config.color}; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;\">\n    <h1 style=\"color: white; margin: 0;\">${config.emoji} ${config.titulo}</h1>\n  </div>\n  \n  <div style=\"background-color: white; padding: 30px; border: 1px solid #e5e7eb;\">\n    <p>Hola <strong>${orden.usuarioNombre}</strong>,</p>\n    <p>${config.mensaje}</p>\n    \n    <div style=\"background-color: #f3f4f6; padding: 15px; border-radius: 8px; margin: 20px 0;\">\n      <p style=\"margin: 5px 0;\"><strong>Orden:</strong> ${orden.numeroOrden}</p>\n      <p style=\"margin: 5px 0;\"><strong>Estado:</strong> <span style=\"background-color: ${config.color}; color: white; padding: 4px 12px; border-radius: 12px;\">${orden.estado}</span></p>\n      ${orden.numeroSeguimiento ? `<p style=\"margin: 5px 0;\"><strong>Seguimiento:</strong> ${orden.numeroSeguimiento}</p>` : ''}\n    </div>\n    \n    <h3>Estado de tu Pedido</h3>\n    ${timelineHtml}\n  </div>\n</body>\n</html>\n`;\n\nreturn {\n  email: orden.usuarioEmail,\n  subject: `${config.emoji} Actualización - Orden #${orden.numeroOrden}`,\n  html: emailHtml,\n  slackChannel: '#ordenes',\n  slackText: `${config.emoji} *Cambio de Estado*\\n*Orden:* ${orden.numeroOrden}\\n*Estado:* ${orden.estado}\\n*Cliente:* ${orden.usuarioNombre}`\n};"
+      },
+      "id": "code-estado",
+      "name": "Code - Cambio Estado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 700]
+    },
+    {
+      "parameters": {
+        "jsCode": "const productos = $input.item.json.data || [];\nconst outputs = [];\n\nproductos.forEach(p => {\n  outputs.push({\n    sheetName: 'Inventario',\n    sheetData: [\n      p.nombre,\n      p.sku,\n      p.stock,\n      p.stockMinimo,\n      `$${p.precio}`,\n      p.stock === 0 ? 'AGOTADO' : (p.stock < p.stockMinimo ? 'BAJO' : 'OK')\n    ]\n  });\n});\n\nreturn outputs;"
+      },
+      "id": "code-sync-inventario",
+      "name": "Code - Sync Inventario",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 1100]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ordenes = $input.item.json.data || [];\nconst hoy = new Date();\nhoy.setHours(0, 0, 0, 0);\n\nconst ordenesHoy = ordenes.filter(orden => {\n  const fecha = new Date(orden.fechaOrden);\n  fecha.setHours(0, 0, 0, 0);\n  return fecha.getTime() === hoy.getTime();\n});\n\nconst outputs = [];\n\nordenesHoy.forEach(o => {\n  const fecha = new Date(o.fechaOrden);\n  outputs.push({\n    sheetName: 'Órdenes Diarias',\n    sheetData: [\n      o.numeroOrden,\n      o.usuarioNombre,\n      `$${o.total}`,\n      o.estado,\n      fecha.toLocaleDateString('es-MX'),\n      fecha.toLocaleTimeString('es-MX')\n    ]\n  });\n});\n\nreturn outputs;"
+      },
+      "id": "code-sync-ordenes",
+      "name": "Code - Sync Órdenes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 1250]
+    },
+    {
+      "parameters": {
+        "fromEmail": "noreply@ecommerce.com",
+        "toEmail": "={{$json.email}}",
+        "subject": "={{$json.subject}}",
+        "emailType": "html",
+        "message": "={{$json.html}}",
+        "options": {}
+      },
+      "id": "gmail-send",
+      "name": "Gmail - Enviar",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [1050, 400],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "GMAIL_CREDENTIAL_ID",
+          "name": "Gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "channel": "={{$json.slackChannel || '#ecommerce'}}",
+        "text": "={{$json.slackText}}",
+        "otherOptions": {}
+      },
+      "id": "slack-send",
+      "name": "Slack - Enviar",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [1050, 550],
+      "credentials": {
+        "slackApi": {
+          "id": "SLACK_CREDENTIAL_ID",
+          "name": "Slack"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": "SPREADSHEET_ID",
+        "sheetName": "={{$json.sheetName}}",
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {
+          "valueInputMode": "RAW"
+        }
+      },
+      "id": "sheets-append",
+      "name": "Sheets - Agregar Fila",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1050, 700],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Central": {
+      "main": [
+        [
+          {
+            "node": "Switch - Tipo de Evento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch - Tipo de Evento": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Obtener Orden",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTTP - Obtener Proveedores",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTTP - Obtener Orden Estado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule - Sync Cada 6h": {
+      "main": [
+        [
+          {
+            "node": "HTTP - Stock Bajo",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "HTTP - Todas Órdenes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Obtener Orden": {
+      "main": [
+        [
+          {
+            "node": "Code - Orden Creada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Obtener Proveedores": {
+      "main": [
+        [
+          {
+            "node": "Code - Stock Bajo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Obtener Orden Estado": {
+      "main": [
+        [
+          {
+            "node": "Code - Cambio Estado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Stock Bajo": {
+      "main": [
+        [
+          {
+            "node": "Code - Sync Inventario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP - Todas Órdenes": {
+      "main": [
+        [
+          {
+            "node": "Code - Sync Órdenes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Orden Creada": {
+      "main": [
+        [
+          {
+            "node": "Gmail - Enviar",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack - Enviar",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Sheets - Agregar Fila",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Stock Bajo": {
+      "main": [
+        [
+          {
+            "node": "Gmail - Enviar",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack - Enviar",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Sheets - Agregar Fila",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Cambio Estado": {
+      "main": [
+        [
+          {
+            "node": "Gmail - Enviar",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack - Enviar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Sync Inventario": {
+      "main": [
+        [
+          {
+            "node": "Sheets - Agregar Fila",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code - Sync Órdenes": {
+      "main": [
+        [
+          {
+            "node": "Sheets - Agregar Fila",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

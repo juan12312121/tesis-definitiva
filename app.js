@@ -16,6 +16,7 @@ const chatbotRoutes = require('./routes/chatbotRoutes');
 const historialRoutes = require('./routes/historialRoutes');
 const catalogoRoutes = require('./routes/catalogoRoutes');
 const uploadRoutes = require('./routes/upload.routes'); // ← NUEVA RUTA
+const pedidoRoutes = require('./routes/pedido.routes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -37,6 +38,7 @@ app.use('/api/chatbot', chatbotRoutes);
 app.use('/api/historial', historialRoutes);
 app.use('/api/catalogo', catalogoRoutes);
 app.use('/api/upload', uploadRoutes); // ← NUEVA RUTA
+app.use('/api/pedidos', pedidoRoutes);
 
 // Ruta de prueba
 app.get('/', (req, res) => {

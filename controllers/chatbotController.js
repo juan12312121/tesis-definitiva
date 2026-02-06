@@ -1,8 +1,8 @@
-// controllers/chatbotController.js - INTEGRADO CON CATÁLOGO
+// controllers/chatbotController.js - MEJORADO CON PRIORIDAD PARA N8N
 
 const ConfiguracionChatbot = require('../models/ConfiguracionChatbot');
 const RespuestaAutomatica = require('../models/RespuestaAutomatica');
-const { CatalogoItem } = require('../models'); // Tu modelo existente
+const { CatalogoItem } = require('../models');
 const moment = require('moment-timezone');
 const { Op } = require('sequelize');
 
@@ -59,7 +59,7 @@ const chatbotController = {
     }
   },
 
-  // 🆕 ANALIZAR MENSAJE MEJORADO - CON CATÁLOGO
+  // 🆕 ANALIZAR MENSAJE MEJORADO - CON PRIORIDADES
   analizarMensaje: async (req, res) => {
     try {
       const { empresaId } = req.params;
@@ -95,6 +95,27 @@ const chatbotController = {
         .replace(/[\u0300-\u036f]/g, '')
         .trim();
 
+      // 🔥 PRIORIDAD 0: COMANDOS RESERVADOS PARA N8N (NO responder aquí)
+      const comandosReservados = [
+        /^cancelar$/i,                              // cancelar
+        /^cancelar\s+pedido\s*#?\d+$/i,            // cancelar pedido #5
+        /^\d+,\d+(;\d+,\d+)*$/,                    // 1,2 o 1,2;3,1 (formato pedido)
+        /^(mis\s+)?pedidos?$/i,                    // pedidos / mis pedidos
+        /^historial$/i,                            // historial
+        /^(si|sí|no)$/i                            // respuestas de confirmación
+      ];
+
+      const esComandoReservado = comandosReservados.some(patron => patron.test(mensajeNormalizado));
+
+      if (esComandoReservado) {
+        return res.json({
+          debe_responder: false,
+          razon: 'Comando reservado para lógica de N8N',
+          tipo_comando: 'reservado_n8n',
+          mensaje_analizado: true
+        });
+      }
+
       // 🔍 PASO 1: Buscar respuestas automáticas programadas
       const respuestas = await RespuestaAutomatica.findAll({
         where: {
@@ -112,6 +133,12 @@ const chatbotController = {
           .normalize('NFD')
           .replace(/[\u0300-\u036f]/g, '')
           .trim();
+
+        // ⚠️ VALIDACIÓN: No usar respuestas automáticas que coincidan con comandos reservados
+        const esDisparadorReservado = comandosReservados.some(patron => patron.test(disparador));
+        if (esDisparadorReservado) {
+          continue; // Saltar esta respuesta automática
+        }
 
         if (mensajeNormalizado.includes(disparador)) {
           respuestaEncontrada = respuesta;
@@ -231,7 +258,6 @@ const chatbotController = {
         });
 
         if (todosCatalogo.length > 0) {
-          // Agrupar por tipo
           const productos = todosCatalogo.filter(i => i.tipo_item === 'producto');
           const servicios = todosCatalogo.filter(i => i.tipo_item === 'servicio');
 
@@ -311,7 +337,7 @@ const chatbotController = {
     }
   },
 
-  // 🆕 BUSCAR EN CATÁLOGO (Endpoint público para N8N)
+  // 🆕 BUSCAR EN CATÁLOGO (sin cambios)
   buscarEnCatalogo: async (req, res) => {
     try {
       const { empresaId } = req.params;
@@ -319,12 +345,10 @@ const chatbotController = {
 
       const where = { empresa_id: empresaId };
 
-      // Filtrar por tipo si se especifica
       if (tipo && ['producto', 'servicio'].includes(tipo)) {
         where.tipo_item = tipo;
       }
 
-      // Si hay búsqueda, agregar condición
       if (busqueda && busqueda.trim() !== '') {
         const busquedaNormalizada = busqueda.trim();
         where[Op.or] = [
@@ -362,7 +386,6 @@ const chatbotController = {
     }
   },
 
-  // 🆕 OBTENER ITEM POR ID (Endpoint público para N8N)
   obtenerItemCatalogo: async (req, res) => {
     try {
       const { empresaId, itemId } = req.params;
@@ -404,8 +427,7 @@ const chatbotController = {
     }
   },
 
-  // ✅ Respuestas automáticas - SIN activo ni prioridad
-  
+  // Métodos de configuración y respuestas (sin cambios)
   obtenerRespuestas: async (req, res) => {
     try {
       const { empresaId } = req.params;
@@ -441,10 +463,30 @@ const chatbotController = {
         });
       }
 
+      // 🔥 VALIDACIÓN: No permitir crear respuestas automáticas con comandos reservados
+      const comandosReservados = [
+        /^cancelar$/i,
+        /^cancelar\s+pedido\s*#?\d+$/i,
+        /^\d+,\d+(;\d+,\d+)*$/,
+        /^(mis\s+)?pedidos?$/i,
+        /^historial$/i,
+        /^(si|sí|no)$/i
+      ];
+
+      const disparadorNormalizado = texto_disparador.toLowerCase().trim();
+      const esReservado = comandosReservados.some(patron => patron.test(disparadorNormalizado));
+
+      if (esReservado) {
+        return res.status(400).json({
+          success: false,
+          message: 'Este disparador está reservado para la lógica del sistema. No se puede crear una respuesta automática para él.'
+        });
+      }
+
       const existente = await RespuestaAutomatica.findOne({
         where: {
           empresa_id: empresaId,
-          texto_disparador: texto_disparador.toLowerCase().trim()
+          texto_disparador: disparadorNormalizado
         }
       });
 
@@ -457,7 +499,7 @@ const chatbotController = {
 
       const nuevaRespuesta = await RespuestaAutomatica.create({
         empresa_id: empresaId,
-        texto_disparador: texto_disparador.toLowerCase().trim(),
+        texto_disparador: disparadorNormalizado,
         respuesta,
         tipo_respuesta: tipo_respuesta || 'texto'
       });

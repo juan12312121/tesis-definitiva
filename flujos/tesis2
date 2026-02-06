@@ -1,0 +1,443 @@
+{
+  "name": "Tesis - Chatbot WhatsApp Completo",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-mensaje",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [-144, 0],
+      "id": "webhook-inicial",
+      "name": "Webhook",
+      "webhookId": "7c272506-5f62-456f-a7c2-9dd935c3ec22"
+    },
+    {
+      "parameters": {
+        "url": "http://host.docker.internal:3000/api/whatsapp/configuracion-chatbot",
+        "sendQuery": true,
+        "specifyQuery": "json",
+        "jsonQuery": "={\n  \"empresaId\": \"{{ $json.body.empresaId }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [48, 0],
+      "id": "http-config",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "msg-usuario",
+              "name": "mensaje_usuario",
+              "value": "={{ $('Webhook').item.json.body.mensaje }}",
+              "type": "string"
+            },
+            {
+              "id": "session-key",
+              "name": "nombreSesion",
+              "value": "={{ $('HTTP Request').first().json.sessionKey }}",
+              "type": "string"
+            },
+            {
+              "id": "empresa-id",
+              "name": "empresaId",
+              "value": "={{ $('Webhook').item.json.body.empresaId }}",
+              "type": "string"
+            },
+            {
+              "id": "push-name",
+              "name": "pushName",
+              "value": "={{ $('Webhook').item.json.body.pushName }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [240, 0],
+      "id": "edit-fields",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('Webhook').first().json.body.mensaje }}",
+        "options": {
+          "systemMessage": "Eres un clasificador de contexto.\nDetermina si el mensaje del usuario está relacionado con el negocio del chatbot.\n\nEl negocio únicamente responde si el mensaje trata sobre:\n- productos o catálogo\n- horarios de atención\n- disponibilidad\n- atención al cliente\n- ubicación\n- precios\n- preguntas generales del negocio\n- pedidos (formato: número,cantidad como \"1,2\" o \"1,2;3,1\")\n- nombres de clientes (cuando están confirmando un pedido)\n- saludos básicos (hola, buenos días, etc.)\n\nIMPORTANTE: Si el mensaje tiene el formato de pedido (por ejemplo: \"1,1\", \"1,2;3,1\", \"2,5\") debes clasificarlo como EN_CONTEXTO porque es parte del proceso de compra.\n\nSi el mensaje es parte de una conversación personal entre dos personas físicas (saludos personales, bromas, temas sentimentales, pláticas de amigos, temas familiares, etc.) que NO tiene que ver con el negocio, debes clasificarlo como FUERA_CONTEXTO.\n\nResponde estrictamente SOLO una de estas dos palabras:\n\"EN_CONTEXTO\" o \"FUERA_CONTEXTO\""
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [416, 0],
+      "id": "ai-agent",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "options": {
+          "temperature": 0
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [400, 256],
+      "id": "gemini-model",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "pK9yX4pY0oDr6muT",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "check-contexto",
+              "leftValue": "={{ $json.output }}",
+              "rightValue": "EN_CONTEXTO",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [768, 0],
+      "id": "if-contexto",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('HTTP Request').first().json;\nconst webhook = $('Webhook').first().json.body;\nconst now = new Date();\nconst hour = now.getHours();\nconst day = now.getDay();\n\nconst diasLaborales = config.dias_laborales || [1, 2, 3, 4, 5];\nconst enDiaLaboral = diasLaborales.includes(day);\nconst enHorario = hour >= config.hora_inicio && hour < config.hora_fin;\nconst abierto = enDiaLaboral && enHorario;\n\nconst mensaje = webhook.mensaje || '';\nconst mensajeLimpio = mensaje.toLowerCase().trim();\n\nconst nombreSesion = config.sessionKey || \n                     webhook.sessionKey || \n                     `${webhook.empresaId}_empresa_${webhook.empresaId}`;\n\n// PRIORIDAD 1: Verificar si hay sesión activa esperando nombre\ntry {\n  const sesionResponse = await fetch(`http://host.docker.internal:3000/api/pedidos/sesion/${webhook.empresaId}/${webhook.numeroOrigen}`);\n  const sesionData = await sesionResponse.json();\n  \n  if (sesionData.success && sesionData.data && sesionData.data.estado === 'esperando_nombre') {\n    if (mensajeLimpio === 'cancelar') {\n      await fetch(`http://host.docker.internal:3000/api/pedidos/sesion/${webhook.empresaId}/${webhook.numeroOrigen}`, {\n        method: 'DELETE'\n      });\n      \n      return {\n        json: {\n          ...config,\n          numeroOrigen: webhook.numeroOrigen,\n          empresaId: webhook.empresaId,\n          nombreSesion: nombreSesion,\n          pushName: webhook.pushName,\n          mensaje_usuario: mensajeLimpio,\n          mensaje: \"❌ *Pedido cancelado*\\n\\n✅ Si cambias de opinión, escribe *productos* para ver el catálogo.\",\n          tipo: 'respuesta_directa',\n          abierto: abierto\n        }\n      };\n    }\n    \n    if (mensaje.trim().length < 3) {\n      return {\n        json: {\n          ...config,\n          numeroOrigen: webhook.numeroOrigen,\n          empresaId: webhook.empresaId,\n          nombreSesion: nombreSesion,\n          pushName: webhook.pushName,\n          mensaje_usuario: mensajeLimpio,\n          mensaje: \"⚠️ *Nombre muy corto*\\n\\n📝 Por favor escribe tu nombre completo (mínimo 3 caracteres).\\n\\n❌ O escribe *cancelar* para anular.\",\n          tipo: 'respuesta_directa',\n          abierto: abierto\n        }\n      };\n    }\n    \n    const datosPedido = typeof sesionData.data.datos_pedido === 'string' \n      ? JSON.parse(sesionData.data.datos_pedido) \n      : sesionData.data.datos_pedido;\n    \n    return {\n      json: {\n        ...config,\n        numeroOrigen: webhook.numeroOrigen,\n        empresaId: webhook.empresaId,\n        nombreSesion: nombreSesion,\n        pushName: webhook.pushName,\n        nombreCliente: mensaje.trim(),\n        items: datosPedido.items,\n        total: datosPedido.total,\n        tipo: 'crear_pedido_final',\n        mensaje_usuario: mensajeLimpio,\n        abierto: abierto\n      }\n    };\n  }\n} catch (error) {\n  console.log('ℹ️ No hay sesión activa');\n}\n\n// PRIORIDAD 2: Verificar si es formato de pedido\nconst patronPedido = /^\\d+,\\d+(;\\d+,\\d+)*$/;\nif (patronPedido.test(mensajeLimpio)) {\n  return {\n    json: {\n      ...config,\n      numeroOrigen: webhook.numeroOrigen,\n      empresaId: webhook.empresaId,\n      nombreSesion: nombreSesion,\n      pushName: webhook.pushName,\n      mensaje_usuario: mensajeLimpio,\n      tipo: 'formato_pedido',\n      abierto: abierto,\n      hora_actual: hour,\n      dia_actual: day\n    }\n  };\n}\n\n// PRIORIDAD 3: Flujo normal\nreturn {\n  json: {\n    ...config,\n    mensaje_usuario: mensajeLimpio,\n    numeroOrigen: webhook.numeroOrigen,\n    pushName: webhook.pushName,\n    empresaId: webhook.empresaId,\n    nombreSesion: nombreSesion,\n    conectado: config.conectado,\n    abierto: abierto,\n    hora_actual: hour,\n    dia_actual: day,\n    mensaje_respuesta: abierto ? config.mensaje_horario : config.mensaje_fuera_horario\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [976, -80],
+      "id": "code-principal",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.mensaje_usuario }}",
+                    "rightValue": "horario",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    },
+                    "id": "check-horario"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "horarios"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "check-productos",
+                    "leftValue": "={{ $json.mensaje_usuario }}",
+                    "rightValue": "producto",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "productos"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "check-formato-pedido",
+                    "leftValue": "={{ $json.tipo }}",
+                    "rightValue": "formato_pedido",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "procesar_pedido"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "check-respuesta-directa",
+                    "leftValue": "={{ $json.tipo }}",
+                    "rightValue": "respuesta_directa",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "respuesta_directa"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "check-crear-pedido",
+                    "leftValue": "={{ $json.tipo }}",
+                    "rightValue": "crear_pedido_final",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "crear_pedido"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "check-saludo",
+                    "leftValue": "={{ $json.mensaje_usuario }}",
+                    "rightValue": "^(hola|buenos|buenas|hi|hey).*",
+                    "operator": {
+                      "type": "string",
+                      "operation": "regex"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "saludo_inicial"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [1200, 176],
+      "id": "switch-rutas",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "check-abierto",
+              "leftValue": "={{ $('Code in JavaScript').first().json.abierto }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1520, 64],
+      "id": "if-horario",
+      "name": "If horario"
+    },
+    {
+      "parameters": {
+        "jsCode": "const codeData = $('Code in JavaScript').first().json;\nconst config = $('HTTP Request').first().json;\n\nconst horaInicio = config.hora_inicio || 9;\nconst horaFin = config.hora_fin || 18;\n\nreturn {\n  json: {\n    numeroOrigen: codeData.numeroOrigen,\n    empresaId: codeData.empresaId,\n    nombreSesion: codeData.nombreSesion,\n    mensaje: config.mensaje_horario || `✅ ¡Estamos abiertos!\\n\\n🕐 *Horario de atención:*\\n📅 Lunes a Viernes\\n⏰ ${horaInicio}:00 AM - ${horaFin}:00 PM\\n\\n💬 ¿En qué puedo ayudarte?`\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1744, -48],
+      "id": "msg-abierto",
+      "name": "Mensaje Abierto"
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $input.first().json;\n\nreturn {\n  json: {\n    empresaId: config.empresaId,\n    numeroOrigen: config.numeroOrigen,\n    nombreSesion: config.nombreSesion,\n    mensaje: config.mensaje_fuera_horario || \"🔒 *Estamos cerrados*\\n\\nNuestro horario de atención es:\\n📅 Lunes a Viernes\\n⏰ 9:00 AM - 6:00 PM\\n\\n✅ Regresa en nuestro horario de atención.\"\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1744, 176],
+      "id": "msg-cerrado",
+      "name": "Mensaje Cerrado"
+    },
+    {
+      "parameters": {
+        "url": "=http://host.docker.internal:3000/api/catalogo/publico/{{ $json.empresaId }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [1520, 320],
+      "id": "get-productos-catalogo",
+      "name": "Obtener productos catálogo"
+    },
+    {
+      "parameters": {
+        "jsCode": "const httpData = $input.first().json;\nconst switchData = $('Switch').first().json;\n\nconst productos = httpData.data;\n\nif (!productos || productos.length === 0) {\n  return [{\n    json: {\n      numeroOrigen: switchData.numeroOrigen,\n      empresaId: switchData.empresaId,\n      nombreSesion: switchData.nombreSesion,\n      mensaje: \"📦 No hay productos disponibles actualmente.\"\n    }\n  }];\n}\n\nlet texto = \"📦 *Catálogo de Productos*\\n\\n\";\n\nproductos.forEach((p, i) => {\n  texto += `*${i + 1}.* ${p.nombre_item}\\n`;\n  \n  if (p.precio) {\n    const precio = parseFloat(p.precio).toFixed(2);\n    texto += `💰 Precio: $${precio}\\n`;\n  }\n  \n  if (p.descripcion) {\n    texto += `📝 ${p.descripcion}\\n`;\n  }\n  \n  texto += '\\n';\n});\n\ntexto += \"━━━━━━━━━━━━━━━━━━━━━\\n\\n\";\ntexto += \"🛒 *¿Deseas hacer un pedido?*\\n\\n\";\ntexto += \"📋 Escribe el número y cantidad:\\n\";\ntexto += \"📌 Ejemplo: *1,2* (2 unidades del producto 1)\\n\\n\";\ntexto += \"Para varios productos:\\n\";\ntexto += \"📌 Ejemplo: *1,2;3,1* (2 del prod.1 y 1 del prod.3)\\n\\n\";\ntexto += \"✏️ Escribe tu pedido ahora o *cancelar* para salir.\";\n\nreturn [{\n  json: {\n    numeroOrigen: switchData.numeroOrigen,\n    empresaId: switchData.empresaId,\n    nombreSesion: switchData.nombreSesion,\n    pushName: switchData.pushName,\n    mensaje: texto,\n    productos: productos\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1744, 320],
+      "id": "format-catalogo",
+      "name": "Formatear catálogo"
+    },
+    {
+      "parameters": {
+        "url": "=http://host.docker.internal:3000/api/catalogo/publico/{{ $json.empresaId }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [1520, 576],
+      "id": "get-productos-pedido",
+      "name": "Obtener productos pedido"
+    },
+    {
+      "parameters": {
+        "jsCode": "const switchData = $input.first().json;\nconst productosResponse = $('Obtener productos pedido').first().json;\nconst productos = productosResponse.data;\n\nconst pedidoStr = switchData.mensaje_usuario;\nconst items = [];\nlet total = 0;\nlet errorMsg = '';\n\nconst pares = pedidoStr.split(';');\n\nfor (const par of pares) {\n  const [idStr, cantStr] = par.split(',');\n  const id = parseInt(idStr);\n  const cantidad = parseInt(cantStr);\n  \n  if (isNaN(id) || isNaN(cantidad) || cantidad <= 0) {\n    errorMsg = `⚠️ *Formato inválido*\\n\\nEl formato correcto es:\\n📌 *1,2* (producto 1, cantidad 2)\\n\\nIntenta de nuevo.`;\n    break;\n  }\n  \n  const producto = productos[id - 1];\n  \n  if (!producto) {\n    errorMsg = `⚠️ *Producto no encontrado*\\n\\nEl producto #${id} no existe.\\n\\nEscribe *productos* para ver el catálogo.`;\n    break;\n  }\n  \n  const subtotal = parseFloat(producto.precio) * cantidad;\n  total += subtotal;\n  \n  items.push({\n    producto_id: producto.id,\n    nombre: producto.nombre_item,\n    cantidad: cantidad,\n    precio_unitario: parseFloat(producto.precio),\n    subtotal: subtotal\n  });\n}\n\nif (errorMsg) {\n  return {\n    json: {\n      numeroOrigen: switchData.numeroOrigen,\n      empresaId: switchData.empresaId,\n      nombreSesion: switchData.nombreSesion,\n      mensaje: errorMsg,\n      tipo: 'error_pedido'\n    }\n  };\n}\n\nlet resumen = '🛒 *Resumen de tu pedido:*\\n\\n';\n\nitems.forEach((item, i) => {\n  resumen += `${i + 1}. ${item.nombre}\\n`;\n  resumen += `   Cantidad: ${item.cantidad}\\n`;\n  resumen += `   Subtotal: $${item.subtotal.toFixed(2)}\\n\\n`;\n});\n\nresumen += `━━━━━━━━━━━━━━━━━━━━━\\n`;\nresumen += `💵 *Total: $${total.toFixed(2)}*\\n\\n`;\nresumen += `📝 Por favor, escribe tu *nombre completo* para confirmar el pedido.\\n\\n`;\nresumen += `❌ O escribe *cancelar* para anular.`;\n\ntry {\n  await fetch('http://host.docker.internal:3000/api/pedidos/sesion', {\n    method: 'POST',\n    headers: { 'Content-Type': 'application/json' },\n    body: JSON.stringify({\n      empresaId: switchData.empresaId,\n      numeroOrigen: switchData.numeroOrigen,\n      estado: 'esperando_nombre',\n      datos_pedido: { items, total }\n    })\n  });\n} catch (error) {\n  console.error('Error creando sesión:', error);\n}\n\nreturn {\n  json: {\n    numeroOrigen: switchData.numeroOrigen,\n    empresaId: switchData.empresaId,\n    nombreSesion: switchData.nombreSesion,\n    mensaje: resumen,\n    tipo: 'confirmar_pedido'\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1744, 576],
+      "id": "procesar-pedido",
+      "name": "Procesar pedido"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3000/api/pedidos/crear",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"empresaId\": {{ $json.empresaId }},\n  \"numeroOrigen\": \"{{ $json.numeroOrigen }}\",\n  \"nombreCliente\": \"{{ $json.nombreCliente }}\",\n  \"items\": {{ JSON.stringify($json.items) }},\n  \"total\": {{ $json.total }}\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [1520, 832],
+      "id": "crear-pedido-bd",
+      "name": "Crear pedido en BD"
+    },
+    {
+      "parameters": {
+        "jsCode": "const pedidoResponse = $input.first().json;\nconst switchData = $('Switch').first().json;\n\nlet mensaje;\n\nif (pedidoResponse.success) {\n  const pedido = pedidoResponse.data;\n  \n  mensaje = `✅ *¡Pedido confirmado!*\\n\\n`;\n  mensaje += `👤 Cliente: ${switchData.nombreCliente}\\n`;\n  mensaje += `🔢 Pedido #${pedido.id}\\n\\n`;\n  mensaje += `📦 *Resumen:*\\n`;\n  \n  switchData.items.forEach((item, i) => {\n    mensaje += `${i + 1}. ${item.nombre} x${item.cantidad}\\n`;\n  });\n  \n  mensaje += `\\n💵 *Total: $${switchData.total.toFixed(2)}*\\n\\n`;\n  mensaje += `📞 Te contactaremos pronto.\\n\\n`;\n  mensaje += `¡Gracias por tu compra!`;\n  \n  // Limpiar sesión\n  try {\n    await fetch(`http://host.docker.internal:3000/api/pedidos/sesion/${switchData.empresaId}/${switchData.numeroOrigen}`, {\n      method: 'DELETE'\n    });\n  } catch (error) {\n    console.log('Error limpiando sesión');\n  }\n} else {\n  mensaje = `❌ *Error al crear el pedido*\\n\\n`;\n  mensaje += `Por favor intenta de nuevo o contacta con soporte.`;\n}\n\nreturn {\n  json: {\n    numeroOrigen: switchData.numeroOrigen,\n    empresaId: switchData.empresaId,\n    nombreSesion: switchData.nombreSesion,\n    mensaje: mensaje\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1744, 832],
+      "id": "confirmar-pedido",
+      "name": "Confirmar pedido"
+    },
+    {
+      "parameters": {
+        "jsCode": "const codeData = $('Code in JavaScript').first().json;\nconst webhookData = $('Webhook').first().json.body;\n\nconst nombreUsuario = webhookData.pushName || 'amigo';\n\nreturn {\n  json: {\n    numeroOrigen: codeData.numeroOrigen,\n    empresaId: codeData.empresaId,\n    nombreSesion: codeData.nombreSesion,\n    mensaje: `👋 ¡Hola ${nombreUsuario}! Bienvenido(a)\\n\\n¿En qué puedo ayudarte hoy?\\n\\n1️⃣ Escribe *horarios* para ver horarios de atención\\n2️⃣ Escribe *productos* para ver nuestro catálogo\\n\\n💬 ¿Qué necesitas?`\n  }\n};"
