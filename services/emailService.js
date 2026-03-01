@@ -12,43 +12,60 @@ class EmailService {
       to: destinatario,
       subject: 'Verificación de Cuenta - Chatbot Empresarial',
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 10px 10px 0 0; text-align: center;">
-            <h1 style="color: white; margin: 0;">🤖 Chatbot Empresarial</h1>
-          </div>
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden;">
           
-          <div style="padding: 30px; background: #f9f9f9;">
-            <h2 style="color: #667eea;">¡Bienvenido!</h2>
-            <p style="color: #666; line-height: 1.6;">
-              Gracias por registrarte. Para activar tu cuenta y poder iniciar sesión, necesitas verificar tu correo electrónico.
+          <!-- HEADER -->
+          <div style="background-color: #1a1a2e; padding: 30px; text-align: center;">
+            <h1 style="color: #ffffff; margin: 0; font-size: 22px; letter-spacing: 1px;">🤖 Chatbot Empresarial</h1>
+            <p style="color: #a0a0b0; margin: 8px 0 0 0; font-size: 13px; letter-spacing: 0.5px;">SISTEMA DE GESTIÓN EMPRESARIAL</p>
+          </div>
+
+          <!-- LÍNEA DECORATIVA -->
+          <div style="height: 4px; background: linear-gradient(90deg, #2d6a9f, #1a1a2e, #2d6a9f);"></div>
+          
+          <!-- CUERPO -->
+          <div style="padding: 40px 35px; background: #ffffff;">
+            <h2 style="color: #1a1a2e; font-size: 20px; margin-top: 0;">Verificación de Correo Electrónico</h2>
+            <p style="color: #555555; line-height: 1.7; font-size: 15px;">
+              Gracias por registrarte. Para activar tu cuenta y acceder al sistema, es necesario verificar tu correo electrónico.
             </p>
             
-            <div style="text-align: center; margin: 30px 0;">
+            <!-- BOTÓN -->
+            <div style="text-align: center; margin: 35px 0;">
               <a href="${enlaceVerificacion}" 
-                 style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 14px 30px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: bold; font-size: 16px;">
-                ✅ Verificar mi Correo
+                 style="background-color: #2d6a9f; color: #ffffff; padding: 14px 36px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold; font-size: 15px; letter-spacing: 0.5px;">
+                Verificar mi Correo
               </a>
             </div>
 
-            <div style="background: white; padding: 15px; border-radius: 8px; margin-top: 20px;">
-              <p style="color: #666; font-size: 14px; margin: 0;">
-                <strong>¿No puedes hacer clic en el botón?</strong><br>
-                Copia y pega este enlace en tu navegador:
+            <!-- ENLACE ALTERNATIVO -->
+            <div style="background: #f4f6f9; padding: 16px 20px; border-radius: 6px; border-left: 4px solid #2d6a9f; margin-top: 25px;">
+              <p style="color: #555555; font-size: 13px; margin: 0 0 8px 0;">
+                <strong>¿No puedes hacer clic en el botón?</strong> Copia y pega este enlace en tu navegador:
               </p>
-              <p style="background: #f5f5f5; padding: 10px; border-radius: 5px; word-break: break-all; font-size: 12px; margin-top: 10px;">
+              <p style="background: #ffffff; border: 1px solid #dde2ea; padding: 10px 12px; border-radius: 4px; word-break: break-all; font-size: 12px; color: #2d6a9f; margin: 0;">
                 ${enlaceVerificacion}
+              </p>
+            </div>
+
+            <!-- AVISO DE EXPIRACIÓN -->
+            <div style="margin-top: 25px; padding: 14px 18px; background: #fff8e1; border-radius: 6px; border-left: 4px solid #f0a500;">
+              <p style="color: #7a5c00; font-size: 13px; margin: 0;">
+                ⏱ <strong>Este enlace expirará en 24 horas.</strong> Si no solicitaste esta verificación, puedes ignorar este correo.
               </p>
             </div>
           </div>
 
-          <div style="padding: 20px; background: #e9ecef; text-align: center; border-radius: 0 0 10px 10px;">
-            <p style="color: #999; font-size: 12px; margin: 0;">
-              Si no creaste esta cuenta, puedes ignorar este correo.
+          <!-- FOOTER -->
+          <div style="background-color: #f4f6f9; padding: 20px 35px; text-align: center; border-top: 1px solid #e0e0e0;">
+            <p style="color: #999999; font-size: 12px; margin: 0;">
+              Chatbot Empresarial © ${new Date().getFullYear()} — Todos los derechos reservados
             </p>
-            <p style="color: #999; font-size: 12px; margin: 5px 0 0 0;">
-              Este enlace expirará en 24 horas.
+            <p style="color: #bbbbbb; font-size: 11px; margin: 5px 0 0 0;">
+              Este es un correo automático, por favor no respondas a este mensaje.
             </p>
           </div>
+
         </div>
       `
     };
@@ -71,52 +88,61 @@ class EmailService {
       to: destinatario,
       subject: '✅ ¡Cuenta Verificada! Ya puedes acceder',
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 10px 10px 0 0; text-align: center;">
-            <h1 style="color: white; margin: 0;">🎉 ¡Cuenta Verificada!</h1>
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden;">
+
+          <!-- HEADER -->
+          <div style="background-color: #1a1a2e; padding: 30px; text-align: center;">
+            <h1 style="color: #ffffff; margin: 0; font-size: 22px; letter-spacing: 1px;">🤖 Chatbot Empresarial</h1>
+            <p style="color: #a0a0b0; margin: 8px 0 0 0; font-size: 13px; letter-spacing: 0.5px;">SISTEMA DE GESTIÓN EMPRESARIAL</p>
           </div>
-          
-          <div style="padding: 30px; background: #f9f9f9;">
-            <p style="font-size: 18px; color: #333;">
+
+          <!-- LÍNEA DECORATIVA -->
+          <div style="height: 4px; background: linear-gradient(90deg, #2d6a9f, #1a1a2e, #2d6a9f);"></div>
+
+          <!-- CUERPO -->
+          <div style="padding: 40px 35px; background: #ffffff;">
+            <h2 style="color: #1a1a2e; font-size: 20px; margin-top: 0;">¡Cuenta Verificada Exitosamente!</h2>
+            <p style="font-size: 15px; color: #333333;">
               Hola <strong>${nombreUsuario}</strong>,
             </p>
-            <p style="color: #666; line-height: 1.6;">
-              ¡Excelentes noticias! Tu cuenta ha sido verificada exitosamente. Ya puedes iniciar sesión y comenzar a usar todas las funcionalidades de nuestro sistema de chatbot empresarial.
+            <p style="color: #555555; line-height: 1.7; font-size: 15px;">
+              Tu cuenta ha sido verificada correctamente. Ya puedes iniciar sesión y comenzar a usar el sistema.
             </p>
             
-            <div style="background: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
-              <h3 style="color: #667eea; margin-top: 0;">📋 Próximos pasos:</h3>
-              <ul style="color: #666; line-height: 1.8;">
+            <!-- PRÓXIMOS PASOS -->
+            <div style="background: #f4f6f9; padding: 20px 24px; border-radius: 6px; margin: 25px 0; border-left: 4px solid #2d6a9f;">
+              <h3 style="color: #1a1a2e; margin-top: 0; font-size: 15px;">Próximos pasos:</h3>
+              <ul style="color: #555555; line-height: 2; font-size: 14px; margin: 0; padding-left: 18px;">
                 <li>Inicia sesión con tu correo y contraseña</li>
-                <li>Configura tu primera instancia de WhatsApp</li>
+                <li>Configura tu instancia de WhatsApp</li>
                 <li>Crea mensajes automáticos personalizados</li>
-                <li>Gestiona tu catálogo de productos/servicios</li>
+                <li>Gestiona tu catálogo de productos y servicios</li>
               </ul>
             </div>
 
-            <div style="text-align: center; margin: 30px 0;">
+            <!-- BOTÓN -->
+            <div style="text-align: center; margin: 35px 0;">
               <a href="${frontendUrl}" 
-                 style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 14px 40px; text-decoration: none; border-radius: 8px; display: inline-block; font-weight: bold; font-size: 16px;">
-                🚀 Iniciar Sesión Ahora
+                 style="background-color: #2d6a9f; color: #ffffff; padding: 14px 40px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold; font-size: 15px; letter-spacing: 0.5px;">
+                Iniciar Sesión
               </a>
             </div>
 
-            <div style="background: #e7f3ff; border-left: 4px solid #2196F3; padding: 15px; border-radius: 4px; margin-top: 20px;">
-              <p style="color: #0c5460; margin: 0; font-size: 14px;">
-                <strong>💡 Consejo:</strong> Configura tu instancia de WhatsApp lo antes posible para empezar a recibir y responder mensajes automáticamente.
-              </p>
-            </div>
-
-            <p style="color: #666; font-size: 14px; margin-top: 30px;">
-              ¿Necesitas ayuda? Responde este correo y con gusto te asistiremos.
+            <p style="color: #999999; font-size: 13px; margin-top: 30px;">
+              ¿Necesitas ayuda? Contáctanos y con gusto te asistiremos.
             </p>
           </div>
 
-          <div style="background: #333; padding: 20px; text-align: center; border-radius: 0 0 10px 10px;">
-            <p style="color: #999; font-size: 12px; margin: 0;">
-              Chatbot Empresarial © ${new Date().getFullYear()} - Todos los derechos reservados
+          <!-- FOOTER -->
+          <div style="background-color: #f4f6f9; padding: 20px 35px; text-align: center; border-top: 1px solid #e0e0e0;">
+            <p style="color: #999999; font-size: 12px; margin: 0;">
+              Chatbot Empresarial © ${new Date().getFullYear()} — Todos los derechos reservados
+            </p>
+            <p style="color: #bbbbbb; font-size: 11px; margin: 5px 0 0 0;">
+              Este es un correo automático, por favor no respondas a este mensaje.
             </p>
           </div>
+
         </div>
       `
     };

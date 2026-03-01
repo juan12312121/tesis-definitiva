@@ -6,24 +6,27 @@ const whatsappService = require('../services/whatsappService');
 const { sequelize } = require('../config/database');
 
 class AuthController {
-  
-  // Registro de empresa + usuario admin + instancia WhatsApp
+
+  // ========================= REGISTRO =========================
   async registrarEmpresa(req, res) {
+    console.log('🟢 [REGISTRO] Request recibido');
+    console.log('📦 Body:', req.body);
+
     const transaction = await sequelize.transaction();
-    
+
     try {
       const {
         nombre_empresa,
-        correo_empresa,        // Opcional, solo informativo
+        correo_empresa,
         telefono_empresa,
         nombre_usuario,
-        correo_usuario,        // ESTE es el que se verifica
+        correo_usuario,
         contraseña_usuario,
         telefono_usuario
       } = req.body;
 
-      // Validar campos requeridos
       if (!nombre_empresa || !nombre_usuario || !correo_usuario || !contraseña_usuario) {
+        console.log('❌ [REGISTRO] Faltan campos obligatorios');
         await transaction.rollback();
         return res.status(400).json({
           success: false,
@@ -31,10 +34,11 @@ class AuthController {
         });
       }
 
-      // Verificar si el correo del usuario ya existe
       const usuarioExistente = await Usuario.findOne({
         where: { correo: correo_usuario }
       });
+
+      console.log('🔎 [REGISTRO] Usuario existente:', !!usuarioExistente);
 
       if (usuarioExistente) {
         await transaction.rollback();
@@ -44,19 +48,16 @@ class AuthController {
         });
       }
 
-      // 1️⃣ Crear empresa (sin verificación)
       const nuevaEmpresa = await Empresa.create({
         nombre: nombre_empresa,
         correo_contacto: correo_empresa || null,
         telefono_contacto: telefono_empresa || null
       }, { transaction });
 
-      console.log(`✅ Empresa creada: ${nuevaEmpresa.nombre} (ID: ${nuevaEmpresa.id})`);
+      console.log('✅ [REGISTRO] Empresa creada:', nuevaEmpresa.id);
 
-      // 2️⃣ Generar token de verificación para el usuario
       const tokenVerificacion = crypto.randomBytes(32).toString('hex');
 
-      // 3️⃣ Crear usuario admin
       const nuevoUsuario = await Usuario.create({
         empresa_id: nuevaEmpresa.id,
         nombre: nombre_usuario,
@@ -67,91 +68,79 @@ class AuthController {
         token_verificacion: tokenVerificacion
       }, { transaction });
 
-      console.log(`✅ Usuario admin creado: ${nuevoUsuario.correo}`);
+      console.log('✅ [REGISTRO] Usuario creado:', nuevoUsuario.correo);
 
-      // 4️⃣ ✅ CREAR INSTANCIA DE WHATSAPP CON NOMBRE ÚNICO BASADO EN EL ID
       const nombreSesion = `empresa_${nuevaEmpresa.id}`;
-      
+
       const nuevaInstancia = await InstanciaWhatsapp.create({
         empresa_id: nuevaEmpresa.id,
         nombre_sesion: nombreSesion,
         conectado: false
       }, { transaction });
 
-      console.log(`✅ Instancia WhatsApp creada: ${nombreSesion} para empresa ${nuevaEmpresa.id}`);
+      console.log('✅ [REGISTRO] Instancia WhatsApp creada:', nombreSesion);
 
-      // Confirmar transacción
       await transaction.commit();
+      console.log('💾 [REGISTRO] Transacción confirmada');
 
-      // 5️⃣ INICIAR SESIÓN DE WHATSAPP (genera QR) - DESPUÉS del commit
-      console.log(`🔄 Iniciando sesión de WhatsApp para ${nombreSesion}...`);
       try {
         await whatsappService.iniciarSesion(nuevaEmpresa.id, nombreSesion);
-        console.log(`✅ Sesión WhatsApp iniciada para ${nombreSesion}`);
-      } catch (whatsappError) {
-        console.error(`⚠️ Error al iniciar WhatsApp (no crítico):`, whatsappError.message);
-        // No fallar el registro si WhatsApp falla
+        console.log('📱 [WHATSAPP] Sesión iniciada');
+      } catch (e) {
+        console.warn('⚠️ [WHATSAPP] Error no crítico:', e.message);
       }
 
-      // 6️⃣ Enviar email de verificación solo al usuario
       try {
         await EmailService.enviarEmailVerificacion(
           correo_usuario,
           tokenVerificacion,
           'usuario'
         );
-        console.log(`📧 Email de verificación enviado a ${correo_usuario}`);
-      } catch (emailError) {
-        console.error(`⚠️ Error al enviar email:`, emailError.message);
-        // No fallar el registro si el email falla
+        console.log('📧 [EMAIL] Verificación enviada');
+      } catch (e) {
+        console.warn('⚠️ [EMAIL] Error:', e.message);
       }
 
-      res.status(201).json({
+      return res.status(201).json({
         success: true,
-        message: 'Empresa y usuario creados. Verifica tu correo para activar tu cuenta.',
+        message: 'Empresa y usuario creados. Verifica tu correo.',
         data: {
-          empresa: {
-            id: nuevaEmpresa.id,
-            nombre: nuevaEmpresa.nombre
-          },
-          usuario: {
-            id: nuevoUsuario.id,
-            nombre: nuevoUsuario.nombre,
-            correo: nuevoUsuario.correo
-          },
+          empresa: { id: nuevaEmpresa.id, nombre: nuevaEmpresa.nombre },
+          usuario: { id: nuevoUsuario.id, nombre: nuevoUsuario.nombre, correo: nuevoUsuario.correo },
           whatsapp: {
             instancia_id: nuevaInstancia.id,
             nombre_sesion: nombreSesion,
-            conectado: false,
-            mensaje: 'Instancia creada. Después de verificar tu email, podrás conectar WhatsApp.'
+            conectado: false
           }
         }
       });
 
     } catch (error) {
       await transaction.rollback();
-      console.error('❌ Error en registro:', error);
-      res.status(500).json({
+      console.error('🔥 [REGISTRO] Error:', error);
+      return res.status(500).json({
         success: false,
-        message: 'Error al registrar empresa',
-        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        message: 'Error al registrar empresa'
       });
     }
   }
 
-  // Login
+  // ========================= LOGIN =========================
   async login(req, res) {
+    console.log('🟢 [LOGIN] Request recibido');
+    console.log('📦 Body:', req.body);
+
     try {
       const { correo, contraseña } = req.body;
 
       if (!correo || !contraseña) {
+        console.log('❌ [LOGIN] Datos incompletos');
         return res.status(400).json({
           success: false,
           message: 'Correo y contraseña son obligatorios'
         });
       }
 
-      // Buscar usuario con empresa e instancia de WhatsApp
       const usuario = await Usuario.findOne({
         where: { correo },
         include: [
@@ -161,13 +150,14 @@ class AuthController {
             include: [
               {
                 model: InstanciaWhatsapp,
-                as: 'instancia_whatsapp',
-                attributes: ['id', 'nombre_sesion', 'conectado', 'ultima_conexion']
+                as: 'instancia_whatsapp'
               }
             ]
           }
         ]
       });
+
+      console.log('👤 [LOGIN] Usuario encontrado:', usuario ? usuario.correo : null);
 
       if (!usuario) {
         return res.status(401).json({
@@ -176,7 +166,8 @@ class AuthController {
         });
       }
 
-      // Verificar si el usuario está verificado
+      console.log('📧 [LOGIN] Usuario verificado:', usuario.verificado);
+
       if (!usuario.verificado) {
         return res.status(403).json({
           success: false,
@@ -184,8 +175,9 @@ class AuthController {
         });
       }
 
-      // Verificar contraseña
       const passwordValida = await usuario.comparePassword(contraseña);
+      console.log('🔑 [LOGIN] Password válida:', passwordValida);
+
       if (!passwordValida) {
         return res.status(401).json({
           success: false,
@@ -193,9 +185,8 @@ class AuthController {
         });
       }
 
-      // Generar token JWT
       const token = jwt.sign(
-        { 
+        {
           id: usuario.id,
           empresa_id: usuario.empresa_id,
           correo: usuario.correo
@@ -204,7 +195,9 @@ class AuthController {
         { expiresIn: '7d' }
       );
 
-      res.status(200).json({
+      console.log('✅ [LOGIN] Login exitoso:', usuario.correo);
+
+      return res.status(200).json({
         success: true,
         message: 'Login exitoso',
         token,
@@ -217,159 +210,53 @@ class AuthController {
             id: usuario.empresa.id,
             nombre: usuario.empresa.nombre
           },
-          whatsapp: usuario.empresa.instancia_whatsapp ? {
-            conectado: usuario.empresa.instancia_whatsapp.conectado,
-            ultima_conexion: usuario.empresa.instancia_whatsapp.ultima_conexion,
-            necesita_configuracion: !usuario.empresa.instancia_whatsapp.conectado
-          } : null
+          whatsapp: usuario.empresa.instancia_whatsapp || null
         }
       });
 
     } catch (error) {
-      console.error('Error en login:', error);
-      res.status(500).json({
+      console.error('🔥 [LOGIN] Error:', error);
+      return res.status(500).json({
         success: false,
         message: 'Error al iniciar sesión'
       });
     }
   }
 
-  // Verificar email (solo para usuarios)
+  // ========================= VERIFICAR EMAIL =========================
   async verificarEmail(req, res) {
+    console.log('🟢 [VERIFY] Request recibido');
+    console.log('🔑 Token:', req.query.token);
+
     try {
       const { token } = req.query;
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 
       if (!token) {
-        return res.redirect(`${frontendUrl}?verificacion=error&mensaje=Token no proporcionado`);
+        return res.redirect(`${frontendUrl}?verificacion=error`);
       }
 
-      // Buscar usuario por token
       const usuario = await Usuario.findOne({
         where: { token_verificacion: token }
       });
 
+      console.log('👤 [VERIFY] Usuario:', usuario ? usuario.correo : null);
+
       if (!usuario) {
-        return res.redirect(`${frontendUrl}?verificacion=error&mensaje=Token inválido o expirado`);
+        return res.redirect(`${frontendUrl}?verificacion=error`);
       }
 
-      if (usuario.verificado) {
-        return res.redirect(`${frontendUrl}?verificacion=info&mensaje=Esta cuenta ya fue verificada anteriormente`);
-      }
-
-      // Verificar usuario
       usuario.verificado = true;
       usuario.token_verificacion = null;
       await usuario.save();
 
-      // Enviar correo de bienvenida
-      try {
-        await EmailService.enviarEmailBienvenida(
-          usuario.correo,
-          usuario.nombre
-        );
-      } catch (emailError) {
-        console.error('Error enviando email de bienvenida:', emailError);
-      }
+      console.log('✅ [VERIFY] Usuario verificado');
 
-      // Redirigir con éxito
-      return res.redirect(`${frontendUrl}?verificacion=success&mensaje=Cuenta verificada exitosamente. Ya puedes iniciar sesión.`);
+      return res.redirect(`${frontendUrl}?verificacion=success`);
 
     } catch (error) {
-      console.error('Error en verificación:', error);
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-      return res.redirect(`${frontendUrl}?verificacion=error&mensaje=Error al verificar cuenta`);
-    }
-  }
-
-  // Obtener perfil del usuario autenticado
-  async obtenerPerfil(req, res) {
-    try {
-      const usuario = await Usuario.findByPk(req.usuario.id, {
-        attributes: ['id', 'nombre', 'correo', 'telefono', 'empresa_id', 'verificado'],
-        include: [
-          {
-            model: Empresa,
-            as: 'empresa',
-            attributes: ['id', 'nombre', 'correo_contacto', 'telefono_contacto'],
-            include: [
-              {
-                model: InstanciaWhatsapp,
-                as: 'instancia_whatsapp',
-                attributes: ['id', 'nombre_sesion', 'conectado', 'ultima_conexion']
-              }
-            ]
-          }
-        ]
-      });
-
-      if (!usuario) {
-        return res.status(404).json({
-          success: false,
-          message: 'Usuario no encontrado'
-        });
-      }
-
-      res.status(200).json({
-        success: true,
-        data: usuario
-      });
-
-    } catch (error) {
-      console.error('Error al obtener perfil:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Error al obtener perfil'
-      });
-    }
-  }
-
-  // Reenviar email de verificación
-  async reenviarVerificacion(req, res) {
-    try {
-      const { correo } = req.body;
-
-      const usuario = await Usuario.findOne({
-        where: { correo }
-      });
-
-      if (!usuario) {
-        return res.status(404).json({
-          success: false,
-          message: 'Usuario no encontrado'
-        });
-      }
-
-      if (usuario.verificado) {
-        return res.status(400).json({
-          success: false,
-          message: 'Esta cuenta ya está verificada'
-        });
-      }
-
-      // Generar nuevo token
-      const nuevoToken = crypto.randomBytes(32).toString('hex');
-      usuario.token_verificacion = nuevoToken;
-      await usuario.save();
-
-      // Reenviar email
-      await EmailService.enviarEmailVerificacion(
-        correo,
-        nuevoToken,
-        'usuario'
-      );
-
-      res.status(200).json({
-        success: true,
-        message: 'Email de verificación reenviado'
-      });
-
-    } catch (error) {
-      console.error('Error al reenviar verificación:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Error al reenviar email'
-      });
+      console.error('🔥 [VERIFY] Error:', error);
+      return res.status(500).json({ success: false });
     }
   }
 }

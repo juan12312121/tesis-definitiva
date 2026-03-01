@@ -189,46 +189,33 @@ exports.obtenerDetallePedido = async (req, res) => {
 // ========================================
 exports.guardarSesion = async (req, res) => {
   try {
-    const { empresaId, numeroOrigen, datosPedido, pushName } = req.body;
+    const { empresaId, numeroOrigen, datosPedido, pushName, jidOriginal, numeroDescifrado } = req.body;
 
     console.log('💾 Guardando pedido:', { 
       empresaId, 
       numeroOrigen,
       pushName,
-      items: datosPedido?.items?.length || 0
+      jidOriginal,
+      numeroDescifrado
     });
-
-    if (!empresaId || !numeroOrigen || !datosPedido?.items) {
-      return res.status(400).json({
-        success: false,
-        mensaje: 'Faltan datos requeridos'
-      });
-    }
-
-    const nombreTemporal = pushName || `Cliente ${numeroOrigen.slice(-4)}`;
 
     const nuevoPedido = await Pedido.create({
       empresa_id: empresaId,
       telefono_cliente: numeroOrigen,
-      nombre_cliente: nombreTemporal,
+      numero_real: numeroDescifrado ? numeroOrigen : null,  // 🔥 GUARDAR NÚMERO REAL SI ESTÁ DESCIFRADO
+      nombre_cliente: pushName || `Cliente ${numeroOrigen.slice(-4)}`,
+      push_name: pushName,
+      jid_whatsapp: jidOriginal,  // 🔥 SIEMPRE GUARDAR JID
       items: datosPedido.items,
       total: datosPedido.total,
       estado: 'pendiente'
     });
 
-    console.log('✅ Pedido creado:', nuevoPedido.id);
-
     res.json({
       success: true,
       mensaje: 'Pedido guardado',
-      data: {
-        id: nuevoPedido.id,
-        nombre_cliente: nuevoPedido.nombre_cliente,
-        items: nuevoPedido.items,
-        total: parseFloat(nuevoPedido.total)
-      }
+      data: nuevoPedido
     });
-
   } catch (error) {
     console.error('❌ Error guardando pedido:', error);
     res.status(500).json({
@@ -422,10 +409,21 @@ exports.obtenerPedidos = async (req, res) => {
       order: [['fecha_creacion', 'DESC']]
     });
 
+    const pedidosFormateados = pedidos.map(pedido => {
+      const pedidoJSON = pedido.toJSON();
+      
+      return {
+        ...pedidoJSON,
+        cliente_display: pedidoJSON.push_name || pedidoJSON.nombre_cliente || 'Cliente',
+        jid_whatsapp: pedidoJSON.jid_whatsapp || pedidoJSON.telefono_cliente,
+        numero_real: pedidoJSON.numero_real  // 🔥 INCLUIR NÚMERO REAL
+      };
+    });
+
     res.json({
       success: true,
-      data: pedidos,
-      total: pedidos.length
+      data: pedidosFormateados,
+      total: pedidosFormateados.length
     });
 
   } catch (error) {

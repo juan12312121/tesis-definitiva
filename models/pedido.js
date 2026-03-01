@@ -13,15 +13,32 @@ const Pedido = sequelize.define('Pedido', {
   },
   nombre_cliente: {
     type: DataTypes.STRING(255),
-    allowNull: true  // ← Permite NULL hasta que dé su nombre
+    allowNull: true
   },
   telefono_cliente: {
     type: DataTypes.STRING(20),
     allowNull: false
   },
+  // 🔥 NUEVOS CAMPOS AGREGADOS
+  push_name: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+    comment: 'Nombre de WhatsApp (pushName)'
+  },
+  jid_whatsapp: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+    comment: 'JID original de WhatsApp (puede ser @lid o @s.whatsapp.net)'
+  },
+  numero_real: {
+    type: DataTypes.STRING(50),
+    allowNull: true,
+    comment: 'Número de teléfono real (solo si se pudo descifrar)'
+  },
+  // 🔥 FIN NUEVOS CAMPOS
   estado: {
-    type: DataTypes.ENUM('pendiente', 'en_proceso', 'entregado', 'cancelado'),  // 🔥 SIN 'temporal'
-    defaultValue: 'pendiente'  // ✅ Default es 'pendiente'
+    type: DataTypes.ENUM('pendiente', 'en_proceso', 'entregado', 'cancelado'),
+    defaultValue: 'pendiente'
   },
   total: {
     type: DataTypes.DECIMAL(10, 2),

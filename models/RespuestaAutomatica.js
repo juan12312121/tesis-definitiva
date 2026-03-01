@@ -1,6 +1,5 @@
-// models/RespuestaAutomatica.js
 const { DataTypes } = require('sequelize');
-const { sequelize } = require('../config/database'); // ← Agregar llaves destructuring
+const { sequelize } = require('../config/database');
 
 const RespuestaAutomatica = sequelize.define('RespuestaAutomatica', {
   id: {
@@ -17,15 +16,6 @@ const RespuestaAutomatica = sequelize.define('RespuestaAutomatica', {
     type: DataTypes.STRING(255),
     allowNull: false,
     field: 'texto_disparador'
-  },
-  respuesta: {
-    type: DataTypes.TEXT,
-    allowNull: false
-  },
-  tipo_respuesta: {
-    type: DataTypes.ENUM('texto', 'imagen', 'documento', 'enlace'),
-    defaultValue: 'texto',
-    field: 'tipo_respuesta'
   },
   fecha_creacion: {
     type: DataTypes.DATE,

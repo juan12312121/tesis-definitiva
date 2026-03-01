@@ -26,119 +26,22 @@ class WhatsAppService {
   // ========================================
   // MÉTODO AUXILIAR: OBTENER NÚMERO REAL
   // ========================================
-  async obtenerNumeroReal(sock, msg, sessionKey) {
-    const remoteJid = msg.key.remoteJid;
-    const pushName = msg.pushName || 'Desconocido';
+async obtenerNumeroReal(sock, msg, sessionKey) {
+  const remoteJid = msg.key.remoteJid;
+  const pushName = msg.pushName || 'Desconocido';
 
-    console.log(`\n🔍 OBTENIENDO NÚMERO REAL...`);
-    console.log(`   RemoteJid: ${remoteJid}`);
-    console.log(`   PushName: ${pushName}`);
+  console.log(`\n🔍 OBTENIENDO NÚMERO REAL...`);
+  console.log(`   RemoteJid: ${remoteJid}`);
+  console.log(`   PushName: ${pushName}`);
 
-    let numeroReal = null;
-    let numeroDescifrado = false;
+  let numeroReal = null;
+  let numeroDescifrado = false;
 
-    // CASO 1: JID NORMAL (@s.whatsapp.net)
-    if (remoteJid.endsWith('@s.whatsapp.net')) {
-      numeroReal = remoteJid.replace(/@s\.whatsapp\.net$/, '');
-      numeroDescifrado = true;
-      console.log(`   ✅ JID estándar - Número real: ${numeroReal}`);
-    }
-    // CASO 2: JID CIFRADO (@lid)
-    else if (remoteJid.includes('@lid')) {
-      console.log(`   🔐 JID CIFRADO (@lid) detectado`);
-
-      // 🔥 DIAGNÓSTICO 1: Verificar store de contactos
-      try {
-        console.log(`\n   📋 DIAGNÓSTICO 1: Store de contactos`);
-        console.log(`   ================================`);
-        
-        if (sock.store) {
-          console.log(`   ✅ sock.store existe`);
-          console.log(`   Propiedades del store:`, Object.keys(sock.store));
-          
-          if (sock.store.contacts) {
-            const contactos = Object.keys(sock.store.contacts);
-            console.log(`   ✅ store.contacts existe`);
-            console.log(`   Total contactos: ${contactos.length}`);
-            console.log(`   Contactos (primeros 5):`, contactos.slice(0, 5));
-            
-            // Buscar este JID específico
-            if (sock.store.contacts[remoteJid]) {
-              console.log(`   ✅ Contacto encontrado en store:`, sock.store.contacts[remoteJid]);
-            } else {
-              console.log(`   ❌ Este JID NO está en store.contacts`);
-            }
-          } else {
-            console.log(`   ❌ store.contacts NO existe`);
-          }
-        } else {
-          console.log(`   ❌ sock.store NO existe`);
-        }
-      } catch (error) {
-        console.log(`   ❌ Error verificando store:`, error.message);
-      }
-
-      // 🔥 DIAGNÓSTICO 2: Probar múltiples formatos con onWhatsApp
-      const formatos = [
-        { nombre: 'Original', valor: remoteJid.split('@')[0] },
-        { nombre: 'Con +', valor: `+${remoteJid.split('@')[0]}` },
-        { nombre: 'Sin 52', valor: remoteJid.split('@')[0].slice(2) },
-        { nombre: 'Con 521', valor: `521${remoteJid.split('@')[0].slice(3)}` },
-        { nombre: 'Último intento', valor: remoteJid.split('@')[0].replace(/^52/, '521') }
-      ];
-
-      console.log(`\n   🔬 DIAGNÓSTICO 2: Probando formatos`);
-      console.log(`   ================================`);
-      
-      for (const formato of formatos) {
-        try {
-          console.log(`   🧪 Formato "${formato.nombre}": "${formato.valor}"`);
-          const [result] = await sock.onWhatsApp(formato.valor);
-          
-          if (result) {
-            console.log(`      exists: ${result.exists}`);
-            console.log(`      jid: ${result.jid}`);
-            
-            if (result.jid && !result.jid.includes('@lid')) {
-              numeroReal = result.jid.replace(/@.*$/, '');
-              numeroDescifrado = true;
-              console.log(`   ✅ ¡DESCIFRADO EXITOSO!`);
-              console.log(`   🎯 Número real: ${numeroReal}`);
-              console.log(`   🎯 Formato ganador: "${formato.nombre}" (${formato.valor})`);
-              break;
-            } else {
-              console.log(`      ⚠️ Sigue cifrado (@lid)`);
-            }
-          } else {
-            console.log(`      ❌ Sin resultado`);
-          }
-        } catch (error) {
-          console.log(`      ❌ Error: ${error.message}`);
-        }
-      }
-
-      // Si no se pudo descifrar con ningún método
-      if (!numeroReal) {
-        numeroReal = remoteJid.replace(/@.*$/, '');
-        numeroDescifrado = false;
-        console.log(`\n   ❌ NO SE PUDO DESCIFRAR CON NINGÚN MÉTODO`);
-        console.log(`   📌 Usando JID cifrado como fallback: ${numeroReal}`);
-        console.log(`   📌 Nombre del contacto (pushName): ${pushName}`);
-      }
-    }
-    // CASO 3: OTROS FORMATOS (fallback)
-    else {
-      numeroReal = remoteJid.replace(/@.*$/, '');
-      numeroDescifrado = false;
-      console.log(`   ⚠️ Formato desconocido - Extrayendo: ${numeroReal}`);
-    }
-
-    console.log(`\n📞 RESULTADO FINAL:`);
-    console.log(`   JID Original: ${remoteJid}`);
-    console.log(`   Número Final: ${numeroReal}`);
-    console.log(`   ¿Es número real?: ${numeroDescifrado ? 'SÍ ✅' : 'NO ❌ (cifrado)'}`);
-    console.log(`   Nombre (pushName): ${pushName}`);
-
+  // CASO 1: JID NORMAL (@s.whatsapp.net)
+  if (remoteJid.endsWith('@s.whatsapp.net')) {
+    numeroReal = remoteJid.replace(/@s\.whatsapp\.net$/, '');
+    numeroDescifrado = true;
+    console.log(`   ✅ JID estándar - Número real: ${numeroReal}`);
     return {
       numeroReal,
       nombreContacto: pushName,
@@ -146,6 +49,161 @@ class WhatsAppService {
       numeroDescifrado
     };
   }
+
+  // CASO 2: JID CIFRADO (@lid)
+  if (remoteJid.includes('@lid')) {
+    console.log(`   🔐 JID CIFRADO (@lid) detectado`);
+    
+    const numeroCifrado = remoteJid.split('@')[0];
+
+    // 🔥 NUEVO MÉTODO 1: Intentar obtener el número del perfil del usuario
+    try {
+      console.log(`   🔍 Intentando obtener perfil del usuario...`);
+      
+      // Esperar un poco para asegurar que el contacto esté sincronizado
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Verificar si existe en onWhatsApp (a veces devuelve el número real en user)
+      const result = await sock.onWhatsApp(remoteJid);
+      
+      if (result && result.length > 0) {
+        console.log(`   📋 Resultado onWhatsApp:`, result[0]);
+        
+        // Algunos casos el número real viene en result[0].jid
+        if (result[0].jid && !result[0].jid.includes('@lid')) {
+          numeroReal = result[0].jid.replace(/@.*$/, '');
+          numeroDescifrado = true;
+          console.log(`   ✅ Número real encontrado en onWhatsApp: ${numeroReal}`);
+          
+          this.jidCache.set(`${sessionKey}_${numeroReal}`, remoteJid);
+          
+          return {
+            numeroReal,
+            nombreContacto: pushName,
+            jidOriginal: remoteJid,
+            numeroDescifrado
+          };
+        }
+        
+        // Intentar con el user si existe
+        if (result[0].user && !result[0].user.includes('@lid')) {
+          numeroReal = result[0].user;
+          numeroDescifrado = true;
+          console.log(`   ✅ Número real encontrado en user: ${numeroReal}`);
+          
+          this.jidCache.set(`${sessionKey}_${numeroReal}`, remoteJid);
+          
+          return {
+            numeroReal,
+            nombreContacto: pushName,
+            jidOriginal: remoteJid,
+            numeroDescifrado
+          };
+        }
+      }
+    } catch (error) {
+      console.log(`   ⚠️ Error en onWhatsApp:`, error.message);
+    }
+
+    // 🔥 NUEVO MÉTODO 2: Consultar el store de contactos (más completo)
+    try {
+      if (sock.store?.contacts?.[remoteJid]) {
+        const contacto = sock.store.contacts[remoteJid];
+        console.log(`   📇 Contacto en store:`, contacto);
+        
+        // Buscar número en diferentes propiedades del contacto
+        if (contacto.number) {
+          numeroReal = contacto.number;
+          numeroDescifrado = true;
+          console.log(`   ✅ Número encontrado en contacto.number: ${numeroReal}`);
+          
+          this.jidCache.set(`${sessionKey}_${numeroReal}`, remoteJid);
+          
+          return {
+            numeroReal,
+            nombreContacto: contacto.notify || contacto.name || pushName,
+            jidOriginal: remoteJid,
+            numeroDescifrado
+          };
+        }
+        
+        // Intentar extraer del vcard si existe
+        if (contacto.vcard) {
+          const vcardMatch = contacto.vcard.match(/TEL[^:]*:([+\d]+)/);
+          if (vcardMatch && vcardMatch[1]) {
+            numeroReal = vcardMatch[1].replace(/\D/g, '');
+            numeroDescifrado = true;
+            console.log(`   ✅ Número extraído de vCard: ${numeroReal}`);
+            
+            this.jidCache.set(`${sessionKey}_${numeroReal}`, remoteJid);
+            
+            return {
+              numeroReal,
+              nombreContacto: contacto.notify || contacto.name || pushName,
+              jidOriginal: remoteJid,
+              numeroDescifrado
+            };
+          }
+        }
+      }
+    } catch (error) {
+      console.log(`   ⚠️ Error consultando store:`, error.message);
+    }
+
+    // 🔥 MÉTODO 3: Intentar múltiples formatos con onWhatsApp
+    const formatos = [
+      numeroCifrado,
+      numeroCifrado.replace(/^52/, ''),
+      `521${numeroCifrado.slice(2)}`,
+      `52${numeroCifrado}`,
+    ];
+
+    for (const formato of formatos) {
+      try {
+        console.log(`   🧪 Probando formato: "${formato}"`);
+        const [result] = await sock.onWhatsApp(formato);
+        
+        if (result?.exists && result?.jid && !result.jid.includes('@lid')) {
+          numeroReal = result.jid.replace(/@.*$/, '');
+          numeroDescifrado = true;
+          console.log(`   ✅ DESCIFRADO con formato: "${formato}" → ${numeroReal}`);
+          
+          this.jidCache.set(`${sessionKey}_${numeroReal}`, remoteJid);
+          
+          return {
+            numeroReal,
+            nombreContacto: pushName,
+            jidOriginal: remoteJid,
+            numeroDescifrado
+          };
+        }
+      } catch (error) {
+        console.log(`      ❌ Error con formato "${formato}": ${error.message}`);
+      }
+    }
+
+    // FALLBACK: No se pudo descifrar
+    console.log(`\n   ❌ NO SE PUDO DESCIFRAR - Usando JID cifrado con pushName`);
+    numeroReal = numeroCifrado;
+    numeroDescifrado = false;
+    
+    return {
+      numeroReal,
+      nombreContacto: pushName,
+      jidOriginal: remoteJid,
+      numeroDescifrado
+    };
+  }
+
+  // CASO 3: OTROS FORMATOS
+  numeroReal = remoteJid.replace(/@.*$/, '');
+  return {
+    numeroReal,
+    nombreContacto: pushName,
+    jidOriginal: remoteJid,
+    numeroDescifrado: false
+  };
+}
 
   async iniciarSesion(empresaId, nombreSesion, forzarNuevaConexion = false) {
     const sessionKey = `${empresaId}_${nombreSesion}`;
