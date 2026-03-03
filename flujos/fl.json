@@ -1,0 +1,1761 @@
+{
+  "name": "Tesis - Chatbot WhatsApp - REFACTORIZADO CON CANCELACIÓN",
+  "nodes": [
+    {
+      "parameters": {
+        "url": "http://host.docker.internal:3000/api/whatsapp/public/configuracion-chatbot",
+        "sendQuery": true,
+        "specifyQuery": "json",
+        "jsonQuery": "={\n  \"empresaId\": {{ JSON.stringify($json.body.empresaId) }}\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        192,
+        64
+      ],
+      "id": "8b8752fb-b714-468f-92cb-66499f0dcc18",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "msg-usuario",
+              "name": "mensaje_usuario",
+              "value": "={{ $('Recibir Mensaje').item.json.body.mensaje }}",
+              "type": "string"
+            },
+            {
+              "id": "session-key",
+              "name": "nombreSesion",
+              "value": "={{ $('HTTP Request').first().json.sessionKey }}",
+              "type": "string"
+            },
+            {
+              "id": "empresa-id",
+              "name": "empresaId",
+              "value": "={{ $('Recibir Mensaje').item.json.body.empresaId }}",
+              "type": "string"
+            },
+            {
+              "id": "push-name",
+              "name": "pushName",
+              "value": "={{ $('Recibir Mensaje').item.json.body.pushName }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        352,
+        64
+      ],
+      "id": "b3107b90-4291-416a-9432-ad608cbf4f9d",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('Recibir Mensaje').first().json.body.mensaje }}",
+        "options": {
+          "systemMessage": "Eres un clasificador de contexto para un chatbot de ventas por WhatsApp.\n\nTu tarea: Determinar si el mensaje del usuario requiere respuesta del bot de ventas.\n\n=== MENSAJES EN_CONTEXTO (el bot DEBE responder) ===\n✅ Consultas sobre productos/catálogo (cualquier variación):\n   - \"productos\", \"qué venden\", \"menu\", \"catálogo\"\n   - \"ver productos\", \"mostrar productos\"\n   - \"que tienen\", \"que hay\"\n\n✅ Horarios de atención (cualquier variación):\n   - \"horario\", \"horarios\", \"están abiertos\"\n   - \"a qué hora cierran\", \"a qué hora abren\"\n   - \"cuando abren\", \"cuando cierran\", \"que hora\"\n\n✅ Pedidos - TODAS LAS VARIACIONES:\n   - \"mis pedidos\", \"pedidos\", \"historial\"\n   - \"ver mis pedidos\", \"ver pedidos\"\n   - \"puedo ver mis pedidos\", \"quiero ver mis pedidos\"\n   - \"consultar pedidos\", \"revisar pedidos\"\n   - \"mis compras\", \"ver mis compras\"\n   - \"historial de pedidos\", \"mis órdenes\"\n\n✅ Cancelar pedidos - TODAS LAS VARIACIONES:\n   - \"cancelar\", \"cancelar pedido\"\n   - \"cancelar pedido #5\", \"cancelar pedido 5\"\n   - \"quiero cancelar\", \"cancelar orden\"\n   - Solo la palabra \"cancelar\"\n   - \"cancela pedido\", \"cancela\"\n\n✅ Disponibilidad de productos (\"tienen X disponible\")\n✅ Atención al cliente y soporte\n✅ Ubicación del negocio (\"dónde están\", \"dirección\")\n✅ Precios (\"cuánto cuesta\", \"precio de X\")\n✅ Preguntas generales del negocio\n\n✅ Pedidos en formato válido:\n   - \"1,2\" (producto 1, cantidad 2)\n   - \"1,2;3,1\" (múltiples productos)\n   - Cualquier patrón número,número\n\n✅ Confirmación de nombre para pedido (cuando ya hay pedido activo)\n✅ Saludos básicos de inicio (\"hola\", \"buenos días\", \"buenas tardes\")\n✅ Palabras clave de confirmación: \"sí\", \"no\" (en contexto de sesiones activas)\n\n=== MENSAJES FUERA_CONTEXTO (el bot NO debe responder) ===\n❌ Conversaciones personales entre personas físicas\n❌ Saludos dirigidos a personas específicas (\"hola Juan\", \"qué onda compa\")\n❌ Temas sentimentales o románticos\n❌ Pláticas casuales de amigos/familia\n❌ Bromas internas, memes, stickers sin contexto de negocio\n❌ Temas políticos, religiosos, deportivos (sin relación al negocio)\n❌ Mensajes claramente para otra persona\n❌ Spam o publicidad de otros negocios\n❌ Contenido ofensivo o inapropiado\n\n=== CASOS ESPECIALES ===\n- \"Hola\" solo → EN_CONTEXTO (puede ser inicio de compra)\n- \"Hola, cómo estás\" con nombre → FUERA_CONTEXTO (conversación personal)\n- Números solos sin comas (ej: \"123456\") → FUERA_CONTEXTO (puede ser teléfono/código)\n- Formato pedido válido (\"1,2\") → SIEMPRE EN_CONTEXTO\n- \"mis pedidos\" / \"ver mis pedidos\" / \"puedo ver mis pedidos\" → SIEMPRE EN_CONTEXTO\n- \"cancelar pedido #5\" → SIEMPRE EN_CONTEXTO\n- \"cancelar\" solo → SIEMPRE EN_CONTEXTO (puede haber sesión activa)\n- \"sí\" / \"si\" / \"no\" solos → SIEMPRE EN_CONTEXTO (pueden ser confirmaciones)\n- Números solos (\"1\", \"2\", \"3\") → SIEMPRE EN_CONTEXTO (pueden ser selección de categoría)\n\n=== INSTRUCCIONES DE RESPUESTA ===\nAnaliza el mensaje y responde ÚNICAMENTE con una de estas dos palabras:\n\"EN_CONTEXTO\" o \"FUERA_CONTEXTO\"\n\nNo agregues explicaciones, puntuación ni texto adicional.\nSolo la palabra exacta.\n\nIMPORTANTE: Cualquier mensaje que mencione \"pedidos\", \"mis pedidos\", \"ver pedidos\", \"historial\", \"cancelar\", \"compras\" debe ser clasificado como EN_CONTEXTO sin excepción. Los números solos también son EN_CONTEXTO."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        528,
+        64
+      ],
+      "id": "3c92e02e-660f-490b-95ec-8d276fb38f16",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "check-contexto",
+              "leftValue": "={{ $json.output }}",
+              "rightValue": "EN_CONTEXTO",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        832,
+        64
+      ],
+      "id": "522cc587-522b-4d5b-a3fd-78cc39ac45cb",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('HTTP Request').first().json;\nconst webhook = $('Recibir Mensaje').first().json.body;\n\nconst jidOriginal = webhook.jidOriginal || webhook.numeroOrigen;\nconst numeroDescifrado = webhook.numeroDescifrado || false;\n\nconst ZONA_HORARIA = 'America/Hermosillo';\nconst now = new Date();\nconst horaLocal = new Date(now.toLocaleString('en-US', { timeZone: ZONA_HORARIA }));\nconst hour = horaLocal.getHours();\nconst day = horaLocal.getDay();\n\nconst horaInicio = config.horario_inicio \n  ? parseInt(config.horario_inicio.split(':')[0]) \n  : (config.hora_inicio || 9);\n\nconst horaFin = config.horario_fin \n  ? parseInt(config.horario_fin.split(':')[0]) \n  : (config.hora_fin || 18);\n\nlet diasLaborales = [1, 2, 3, 4, 5];\nif (config.dias_laborales) {\n  try {\n    diasLaborales = typeof config.dias_laborales === 'string' \n      ? JSON.parse(config.dias_laborales) \n      : config.dias_laborales;\n  } catch (e) {\n    console.log('⚠️ Error parseando dias_laborales:', e.message);\n  }\n}\n\nconst enDiaLaboral = diasLaborales.includes(day);\nconst enHorario = hour >= horaInicio && hour < horaFin;\nconst abierto = enDiaLaboral && enHorario;\n\nconst mensaje = webhook.mensaje || '';\nconst mensajeLimpio = mensaje.toLowerCase().trim();\n\nlet nombreSesion = config.sessionKey || \n                   webhook.sessionKey || \n                   `${webhook.empresaId}_empresa_${webhook.empresaId}`;\n\nif (nombreSesion && nombreSesion.startsWith(`${webhook.empresaId}_`)) {\n  nombreSesion = nombreSesion.substring(`${webhook.empresaId}_`.length);\n}\n\nconsole.log('═══════════════════════════════════════════════════════════════');\nconsole.log('🎯 MENSAJE RECIBIDO:', mensajeLimpio);\nconsole.log('📞 Usuario:', webhook.numeroOrigen);\nconsole.log('═══════════════════════════════════════════════════════════════');\n\nconst patronCancelarEspecifico = /\\b(?:cancelar|cancela)\\s+(?:pedido|orden)\\s*#?(\\d+)\\b/i;\nconst matchCancelarEspecifico = mensajeLimpio.match(patronCancelarEspecifico);\n\nif (matchCancelarEspecifico) {\n  const pedidoId = matchCancelarEspecifico[1];\n  console.log(`🎯 DETECTADO: Cancelar pedido específico #${pedidoId}`);\n  return {\n    json: {\n      ...config,\n      numeroOrigen: webhook.numeroOrigen,\n      empresaId: webhook.empresaId,\n      nombreSesion,\n      pushName: webhook.pushName,\n      jidOriginal,\n      numeroDescifrado,\n      mensaje_usuario: mensajeLimpio,\n      pedidoId: parseInt(pedidoId),\n      tipo: 'cancelar_pedido',\n      mensaje: `🔄 *Procesando cancelación del pedido #${pedidoId}...*`,\n      abierto\n    }\n  };\n}\n\nconst patronCancelarGeneral = /^(?:cancelar|cancela)$/i;\nconst esCancelarGeneral = patronCancelarGeneral.test(mensajeLimpio);\n\nif (!esCancelarGeneral) {\n  const patronVerPedidos = /\\b(mis?\\s+pedidos?|ver\\s+mis?\\s+pedidos?|pedidos?|historial|mis?\\s+compras?|ver\\s+compras?|consultar\\s+pedidos?|revisar\\s+pedidos?|puedo\\s+ver\\s+mis?\\s+pedidos?|quiero\\s+ver\\s+mis?\\s+pedidos?)\\b/i;\n  if (patronVerPedidos.test(mensajeLimpio)) {\n    console.log('✅ DETECTADO: Ver pedidos');\n    return {\n      json: {\n        ...config,\n        numeroOrigen: webhook.numeroOrigen,\n        empresaId: webhook.empresaId,\n        nombreSesion,\n        pushName: webhook.pushName,\n        jidOriginal,\n        numeroDescifrado,\n        mensaje_usuario: mensajeLimpio,\n        tipo: 'ver_pedidos',\n        mensaje: '📋 *Consultando tus pedidos...*',\n        abierto\n      }\n    };\n  }\n}\n\ntry {\n  const sesionData = await this.helpers.httpRequest({\n    method: 'GET',\n    url: `http://host.docker.internal:3000/api/pedidos/sesion/${webhook.empresaId}/${webhook.numeroOrigen}`,\n    json: true\n  });\n\n  if (sesionData && sesionData.success && sesionData.data) {\n    const estadoActual = sesionData.data.estado;\n    console.log('📋 Sesión encontrada - Estado:', estadoActual);\n\n    if (estadoActual === 'seleccionando_categoria') {\n      const datosSesion = typeof sesionData.data.datos_pedido === 'string'\n        ? JSON.parse(sesionData.data.datos_pedido)\n        : sesionData.data.datos_pedido;\n      const categorias = datosSesion?.categorias || [];\n\n      if (mensajeLimpio === 'cancelar') {\n        await this.helpers.httpRequest({\n          method: 'DELETE',\n          url: `http://host.docker.internal:3000/api/pedidos/sesion/${webhook.empresaId}/${webhook.numeroOrigen}`,\n          json: true\n        });\n        return {\n          json: {\n            ...config,\n            numeroOrigen: webhook.numeroOrigen,\n            empresaId: webhook.empresaId,\n            nombreSesion,\n            pushName: webhook.pushName,\n            jidOriginal,\n            numeroDescifrado,\n            mensaje_usuario: mensajeLimpio,\n            mensaje: '✅ Operación cancelada.\\n\\n📋 Escribe *productos* para ver el catálogo.',\n            tipo: 'respuesta_directa',\n            abierto\n          }\n        };\n      }\n\n      const opcion = parseInt(mensajeLimpio);\n      if (!isNaN(opcion) && opcion >= 0 && opcion <= categorias.length) {\n        console.log(`🏷️ Seleccionar categoría opción ${opcion}`);\n        return {\n          json: {\n            ...config,\n            numeroOrigen: webhook.numeroOrigen,\n            empresaId: webhook.empresaId,\n            nombreSesion,\n            pushName: webhook.pushName,\n            jidOriginal,\n            numeroDescifrado,\n            mensaje_usuario: mensajeLimpio,\n            tipo: 'seleccionar_categoria',\n            categoriaOpcion: opcion,\n            categorias,\n            abierto\n          }\n        };\n      }\n\n      let msgInvalido = `❌ Opción no válida. Escribe un número del *0* al *${categorias.length}*:\\n\\n`;\n      categorias.forEach((cat, i) => { msgInvalido += `*${i + 1}.* ${cat.nombre}\\n`; });\n      msgInvalido += `*0.* Ver todos los productos\\n\\n❌ O escribe *cancelar* para salir.`;\n      return {\n        json: {\n          ...config,\n          numeroOrigen: webhook.numeroOrigen,\n          empresaId: webhook.empresaId,\n          nombreSesion,\n          pushName: webhook.pushName,\n          jidOriginal,\n          numeroDescifrado,\n          mensaje_usuario: mensajeLimpio,\n          mensaje: msgInvalido,\n          tipo: 'respuesta_directa',\n          abierto\n        }\n      };\n    }\n\n    if (estadoActual === 'confirmar_cancelacion') {\n      if (mensajeLimpio === 'si' || mensajeLimpio === 'sí') {\n        await this.helpers.httpRequest({\n          method: 'DELETE',\n          url: `http://host.docker.internal:3000/api/pedidos/sesion/${webhook.empresaId}/${webhook.numeroOrigen}`,\n          json: true\n        });\n        return {\n          json: {\n            ...config,\n            numeroOrigen: webhook.numeroOrigen,\n            empresaId: webhook.empresaId,\n            nombreSesion,\n            pushName: webhook.pushName,\n            jidOriginal,\n            numeroDescifrado,\n            mensaje_usuario: mensajeLimpio,\n            mensaje: \"❌ *Pedido cancelado exitosamente*\\n\\n✅ Si cambias de opinión, escribe *productos* para ver el catálogo.\",\n            tipo: 'respuesta_directa',\n            abierto\n          }\n        };\n      } else if (mensajeLimpio === 'no') {\n        await this.helpers.httpRequest({\n          method: 'PUT',\n          url: `http://host.docker.internal:3000/api/pedidos/sesion/${webhook.empresaId}/${webhook.numeroOrigen}`,\n          headers: { 'Content-Type': 'application/json' },\n          body: { estado: 'pendiente' },\n          json: true\n        });\n        return {\n          json: {\n            ...config,\n            numeroOrigen: webhook.numeroOrigen,\n            empresaId: webhook.empresaId,\n            nombreSesion,\n            pushName: webhook.pushName,\n            jidOriginal,\n            numeroDescifrado,\n            mensaje_usuario: mensajeLimpio,\n            mensaje: \"✅ *Pedido conservado*\\n\\n📝 Por favor, escribe tu *nombre completo* para confirmar el pedido.\\n\\n❌ O escribe *cancelar* si cambias de opinión.\",\n            tipo: 'respuesta_directa',\n            abierto\n          }\n        };\n      } else {\n        return {\n          json: {\n            ...config,\n            numeroOrigen: webhook.numeroOrigen,\n            empresaId: webhook.empresaId,\n            nombreSesion,\n            pushName: webhook.pushName,\n            jidOriginal,\n            numeroDescifrado,\n            mensaje_usuario: mensajeLimpio,\n            mensaje: \"⚠️ *Respuesta no válida*\\n\\n✅ Escribe *sí* para cancelar el pedido\\n❌ Escribe *no* para continuar\",\n            tipo: 'respuesta_directa',\n            abierto\n          }\n        };\n      }\n    }\n\n    if (estadoActual === 'esperando_nombre') {\n      const esComando =\n        mensajeLimpio === 'cancelar' ||\n        /^\\d+$/.test(mensajeLimpio) ||\n        /\\b(productos?|cat[aá]logo|men[uú]|que tienen|que venden|ver productos)\\b/i.test(mensajeLimpio) ||\n        /\\b(mis?\\s+pedidos?|ver\\s+mis?\\s+pedidos?|pedidos?|historial|mis?\\s+compras?)\\b/i.test(mensajeLimpio) ||\n        /\\b(?:cancelar|cancela)\\s+(?:pedido|orden)\\s*#?\\d+\\b/i.test(mensajeLimpio) ||\n        /\\b(hola|buenas|buenos dias|buenas tardes|buenas noches|buen dia)\\b/i.test(mensajeLimpio);\n\n      if (esComando) {\n        console.log('⚠️ Comando detectado en esperando_nombre — borrando sesión y rerutando');\n        try {\n          await this.helpers.httpRequest({\n            method: 'DELETE',\n            url: `http://host.docker.internal:3000/api/pedidos/sesion/${webhook.empresaId}/${webhook.numeroOrigen}`,\n            json: true\n          });\n        } catch(e) {}\n      } else {\n        if (mensaje.trim().length < 3) {\n          return {\n            json: {\n              ...config,\n              numeroOrigen: webhook.numeroOrigen,\n              empresaId: webhook.empresaId,\n              nombreSesion,\n              pushName: webhook.pushName,\n              jidOriginal,\n              numeroDescifrado,\n              mensaje_usuario: mensajeLimpio,\n              mensaje: \"⚠️ *Nombre muy corto*\\n\\n📝 Por favor escribe tu nombre completo (mínimo 3 caracteres).\\n\\n❌ O escribe *cancelar* para anular.\",\n              tipo: 'respuesta_directa',\n              abierto\n            }\n          };\n        }\n\n        const datosPedido = typeof sesionData.data.datos_pedido === 'string' \n          ? JSON.parse(sesionData.data.datos_pedido) \n          : sesionData.data.datos_pedido;\n\n        return {\n          json: {\n            ...config,\n            numeroOrigen: webhook.numeroOrigen,\n            empresaId: webhook.empresaId,\n            nombreSesion,\n            pushName: webhook.pushName,\n            jidOriginal,\n            numeroDescifrado,\n            nombreCliente: mensaje.trim(),\n            items: datosPedido.items,\n            total: datosPedido.total,\n            tipo: 'crear_pedido',\n            mensaje: '✅ *Confirmando tu pedido...*',\n            mensaje_usuario: mensajeLimpio,\n            abierto\n          }\n        };\n      }\n    }\n  }\n} catch (error) {\n  console.log('ℹ️ No hay sesión activa o error:', error.message);\n}\n\nif (esCancelarGeneral) {\n  return {\n    json: {\n      ...config,\n      numeroOrigen: webhook.numeroOrigen,\n      empresaId: webhook.empresaId,\n      nombreSesion,\n      pushName: webhook.pushName,\n      jidOriginal,\n      numeroDescifrado,\n      mensaje_usuario: mensajeLimpio,\n      mensaje: \"ℹ️ *No tienes ningún pedido activo*\\n\\n📋 Escribe *productos* para ver nuestro catálogo\\n🛒 O escribe tu pedido directamente\\n\\n💬 ¿En qué puedo ayudarte?\",\n      tipo: 'respuesta_directa',\n      abierto\n    }\n  };\n}\n\nconst patronPedido = /^\\d+,\\d+(;\\d+,\\d+)*$/;\nif (patronPedido.test(mensajeLimpio)) {\n  return {\n    json: {\n      ...config,\n      numeroOrigen: webhook.numeroOrigen,\n      empresaId: webhook.empresaId,\n      nombreSesion,\n      pushName: webhook.pushName,\n      jidOriginal,\n      numeroDescifrado,\n      mensaje_usuario: mensajeLimpio,\n      tipo: 'procesar_pedido',\n      mensaje: '🛒 *Procesando tu pedido...*',\n      abierto,\n      hora_actual: hour,\n      dia_actual: day\n    }\n  };\n}\n\nconst mensajeLower = mensajeLimpio.toLowerCase();\nlet tipoMensaje = 'fallback';\nlet mensajeRespuesta = '';\n\nconst confirmacionesSimples = ['si', 'sí', 'ok', 'vale', 'okey', 'okay', 'de acuerdo', 'claro', 'bueno', 'listo', 'entendido', 'perfecto', 'dale', 'ya', 'bien'];\nif (confirmacionesSimples.includes(mensajeLower)) {\n  return {\n    json: {\n      ...config,\n      mensaje_usuario: mensajeLimpio,\n      numeroOrigen: webhook.numeroOrigen,\n      pushName: webhook.pushName,\n      jidOriginal,\n      numeroDescifrado,\n      empresaId: webhook.empresaId,\n      nombreSesion,\n      conectado: config.conectado,\n      abierto,\n      hora_actual: hour,\n      dia_actual: day,\n      tipo: 'fallback',\n      mensaje: abierto ? config.mensaje_horario : config.mensaje_fuera_horario,\n      mensaje_respuesta: abierto ? config.mensaje_horario : config.mensaje_fuera_horario\n    }\n  };\n}\n\nconst saludos = ['hola', 'buenas', 'buenos dias', 'buenas tardes', 'buenas noches', 'buen dia', 'hey', 'ola', 'que tal', 'buenos días'];\nif (saludos.some(s => mensajeLower.includes(s))) {\n  tipoMensaje = 'saludo_inicial';\n}\nelse if (mensajeLower.includes(config.trigger_horarios || 'horario') || \n         mensajeLower.includes('hora') || \n         mensajeLower.includes('cuando abren') || \n         mensajeLower.includes('cuando cierran') ||\n         mensajeLower.includes('que hora') ||\n         mensajeLower.includes('a que hora')) {\n  tipoMensaje = 'mostrar_horario';\n}\nelse if (mensajeLower.includes(config.trigger_productos || 'productos') || \n         mensajeLower.includes('catalogo') || \n         mensajeLower.includes('catálogo') || \n         mensajeLower.includes('que tienen') || \n         mensajeLower.includes('que venden') ||\n         mensajeLower.includes('menu') ||\n         mensajeLower.includes('menú') ||\n         mensajeLower.includes('ver productos')) {\n  tipoMensaje = 'productos';\n}\nelse if (mensajeLower.includes('ayuda') || mensajeLower.includes('opciones')) {\n  tipoMensaje = 'saludo_inicial';\n}\nelse {\n  tipoMensaje = 'fallback';\n  mensajeRespuesta = abierto ? config.mensaje_horario : config.mensaje_fuera_horario;\n}\n\nconsole.log('📤 Tipo:', tipoMensaje);\n\nreturn {\n  json: {\n    ...config,\n    mensaje_usuario: mensajeLimpio,\n    numeroOrigen: webhook.numeroOrigen,\n    pushName: webhook.pushName,\n    jidOriginal,\n    numeroDescifrado,\n    empresaId: webhook.empresaId,\n    nombreSesion,\n    conectado: config.conectado,\n    abierto,\n    hora_actual: hour,\n    dia_actual: day,\n    tipo: tipoMensaje,\n    mensaje: mensajeRespuesta || (abierto ? config.mensaje_horario : config.mensaje_fuera_horario),\n    mensaje_respuesta: abierto ? config.mensaje_horario : config.mensaje_fuera_horario\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1808,
+        592
+      ],
+      "id": "a6996572-4859-4a14-a688-2082e4debf4f",
+      "name": "Validar y Clasificar"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tipo }}",
+                    "rightValue": "mostrar_horario",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "mostrar_horario"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tipo }}",
+                    "rightValue": "productos",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "productos"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tipo }}",
+                    "rightValue": "procesar_pedido",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "procesar_pedido"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tipo }}",
+                    "rightValue": "respuesta_directa",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "respuesta_directa"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tipo }}",
+                    "rightValue": "saludo_inicial",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "saludo_inicial"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tipo }}",
+                    "rightValue": "ver_pedidos",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ver_pedidos"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tipo }}",
+                    "rightValue": "crear_pedido",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "crear_pedido"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tipo }}",
+                    "rightValue": "cancelar_pedido",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "cancelar_pedido"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.tipo }}",
+                    "rightValue": "seleccionar_categoria",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "seleccionar_categoria"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        2096,
+        528
+      ],
+      "id": "0687ab79-3fee-4302-b293-282925eb4f1c",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('HTTP Request').first().json;\nconst switchData = $('Switch').first().json;\n\nlet nombreSesion = switchData.nombreSesion;\nif (nombreSesion && nombreSesion.startsWith(`${switchData.empresaId}_`)) {\n  nombreSesion = nombreSesion.substring(`${switchData.empresaId}_`.length);\n}\n\nlet bdData = null;\ntry {\n  bdData = $('Analizar Mensaje BD').first().json;\n} catch (e) {}\n\nlet mensaje = '';\n\nif (bdData && bdData.debe_responder === true && bdData.respuesta?.texto) {\n  mensaje = bdData.respuesta.texto;\n} else {\n  const horaInicio = config.hora_inicio || 9;\n  const horaFin = config.hora_fin || 18;\n  const diasLaborales = config.dias_laborales || [1, 2, 3, 4, 5];\n  const nombresDias = { 0: 'Domingo', 1: 'Lunes', 2: 'Martes', 3: 'Miércoles', 4: 'Jueves', 5: 'Viernes', 6: 'Sábado' };\n  const diasTexto = diasLaborales.map(d => nombresDias[d]).join(', ');\n  mensaje = `🕐 *Horario de Atención*\\n\\n📅 *Días laborales:*\\n${diasTexto}\\n\\n⏰ *Horario:*\\n${horaInicio}:00 hrs - ${horaFin}:00 hrs\\n\\n━━━━━━━━━━━━━━━━━━━━━\\n\\n💬 ¿En qué más puedo ayudarte?\\n\\n📋 Escribe *productos* para ver el catálogo\\n🛒 O escribe tu pedido directamente`;\n}\n\nreturn {\n  json: {\n    numeroOrigen: switchData.numeroOrigen,\n    empresaId: switchData.empresaId,\n    nombreSesion: nombreSesion,\n    mensaje: mensaje\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3024,
+        112
+      ],
+      "id": "12889566-95a8-46aa-9963-8ee17c879d12",
+      "name": "Mostrar Horario"
+    },
+    {
+      "parameters": {
+        "url": "=http://host.docker.internal:3000/api/catalogo/publico/{{ $json.empresaId }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2944,
+        272
+      ],
+      "id": "dbcb5fa8-f70e-4019-8c91-6bacd7c8890d",
+      "name": "Obtener productos catálogo"
+    },
+    {
+      "parameters": {
+        "jsCode": "const httpData = $input.first().json;\nconst switchData = $('Switch').first().json;\n\nconst productos = (httpData.data || []).filter(p => {\n  if (p.stock === null || p.stock === undefined) return true;\n  return p.stock > 0;\n});\n\nlet nombreSesion = switchData.nombreSesion;\nif (nombreSesion && nombreSesion.startsWith(`${switchData.empresaId}_`)) {\n  nombreSesion = nombreSesion.substring(`${switchData.empresaId}_`.length);\n}\n\nif (!productos || productos.length === 0) {\n  return {\n    json: {\n      numeroOrigen: switchData.numeroOrigen,\n      empresaId: switchData.empresaId,\n      nombreSesion,\n      mensaje: \"📦 No hay productos disponibles actualmente.\",\n      productosConImagen: []\n    }\n  };\n}\n\n// Extraer categorías únicas\nconst categoriasMap = {};\nproductos.forEach(p => {\n  if (p.categoria && p.categoria.id) {\n    categoriasMap[p.categoria.id] = p.categoria.nombre;\n  }\n});\nconst categorias = Object.entries(categoriasMap)\n  .map(([id, nombre]) => ({ id: parseInt(id), nombre }))\n  .sort((a, b) => a.nombre.localeCompare(b.nombre));\n\n// Sin categorías → mostrar todos directo\nif (categorias.length === 0) {\n  let mensajeCompleto = '📦 *Catálogo de Productos*\\n\\n';\n  const productosConImagen = [];\n  let contador = 1;\n  productos.forEach(p => {\n    const numero = contador++;\n    mensajeCompleto += `*${numero}.* ${p.nombre_item}\\n`;\n    if (p.precio) mensajeCompleto += `💰 $${parseFloat(p.precio).toFixed(2)}\\n`;\n    if (p.descripcion) mensajeCompleto += `📝 ${p.descripcion}\\n`;\n    mensajeCompleto += '\\n';\n    if (p.imagen_url && p.imagen_url.trim() !== '' && p.imagen_url !== 'null' && p.imagen_url !== 'undefined') {\n      productosConImagen.push({\n        numero, nombre: p.nombre_item,\n        precio: p.precio ? `${parseFloat(p.precio).toFixed(2)}` : '',\n        descripcion: p.descripcion || '',\n        imagen_url: p.imagen_url\n      });\n    }\n  });\n  mensajeCompleto += `━━━━━━━━━━━━━━━━━━━━━\\n\\n🛒 *¿Cómo hacer tu pedido?*\\n\\n📋 Escribe: *número,cantidad*\\n\\n✏️ Escribe tu pedido ahora o *cancelar* para salir.`;\n  return {\n    json: {\n      numeroOrigen: switchData.numeroOrigen,\n      empresaId: switchData.empresaId,\n      nombreSesion,\n      pushName: switchData.pushName,\n      mensaje: mensajeCompleto,\n      productosConImagen\n    }\n  };\n}\n\n// HAY CATEGORÍAS → borrar sesión vieja y guardar nueva\ntry {\n  await this.helpers.httpRequest({\n    method: 'DELETE',\n    url: `http://host.docker.internal:3000/api/pedidos/sesion/${switchData.empresaId}/${switchData.numeroOrigen}`,\n    json: true\n  });\n  console.log('🗑️ Sesión anterior borrada');\n} catch(e) {\n  console.log('ℹ️ No había sesión previa:', e.message);\n}\n\ntry {\n  const postResult = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'http://host.docker.internal:3000/api/pedidos/sesion',\n    body: {\n      empresaId: switchData.empresaId,\n      numeroOrigen: switchData.numeroOrigen,\n      nombreSesion: nombreSesion,\n      pushName: switchData.pushName,\n      jidOriginal: switchData.jidOriginal || '',\n      numeroDescifrado: switchData.numeroDescifrado || false,\n      estado: 'seleccionando_categoria',\n      datosPedido: { categorias }\n    },\n    json: true\n  });\n  console.log('✅ Sesión guardada:', JSON.stringify(postResult));\n} catch(e) {\n  console.log('❌ Error guardando sesión:', e.message);\n}\n\nlet mensaje = '📦 *Catálogo de Productos*\\n\\n¿Qué categoría te interesa?\\n\\n';\ncategorias.forEach((cat, i) => {\n  mensaje += `*${i + 1}.* ${cat.nombre}\\n`;\n});\nmensaje += `*0.* Ver todos los productos\\n\\n✏️ Escribe el *número* de la categoría o *cancelar* para salir.`;\n\nreturn {\n  json: {\n    numeroOrigen: switchData.numeroOrigen,\n    empresaId: switchData.empresaId,\n    nombreSesion,\n    pushName: switchData.pushName,\n    mensaje,\n    productosConImagen: []\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3104,
+        272
+      ],
+      "id": "83860b3b-94f2-4559-bce0-2779cddbc4a1",
+      "name": "Formatear catálogo"
+    },
+    {
+      "parameters": {
+        "url": "=http://host.docker.internal:3000/api/catalogo/publico/{{ $json.empresaId }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2880,
+        432
+      ],
+      "id": "3f097f6d-3f61-44ea-a1ad-7e7757f5a408",
+      "name": "Obtener productos por categoría"
+    },
+    {
+      "parameters": {
+        "jsCode": "const httpData = $input.first().json;\nconst switchData = $('Switch').first().json;\n\nconst todosLosProductos = (httpData.data || []).filter(p => {\n  if (p.stock === null || p.stock === undefined) return true;\n  return p.stock > 0;\n});\n\nlet nombreSesion = switchData.nombreSesion;\nif (nombreSesion && nombreSesion.startsWith(`${switchData.empresaId}_`)) {\n  nombreSesion = nombreSesion.substring(`${switchData.empresaId}_`.length);\n}\n\nconst categoriaOpcion = switchData.categoriaOpcion;\nconst categorias = switchData.categorias || [];\n\n// ✅ FIXED: usar this.helpers.httpRequest en lugar de fetch\ntry {\n  await this.helpers.httpRequest({\n    method: 'DELETE',\n    url: `http://host.docker.internal:3000/api/pedidos/sesion/${switchData.empresaId}/${switchData.numeroOrigen}`,\n    json: true\n  });\n  console.log('🗑️ Sesión de categoría borrada');\n} catch(e) {\n  console.log('ℹ️ No había sesión que borrar:', e.message);\n}\n\nlet productosFiltrados;\nlet tituloCatalogo;\n\nif (categoriaOpcion === 0) {\n  productosFiltrados = todosLosProductos;\n  tituloCatalogo = '📦 *Catálogo Completo*';\n} else {\n  const categoriaElegida = categorias[categoriaOpcion - 1];\n  if (!categoriaElegida) {\n    return {\n      json: {\n        numeroOrigen: switchData.numeroOrigen,\n        empresaId: switchData.empresaId,\n        nombreSesion,\n        pushName: switchData.pushName,\n        mensaje: `❌ Opción no válida. Escribe *productos* para ver el catálogo.`,\n        productosConImagen: []\n      }\n    };\n  }\n  productosFiltrados = todosLosProductos.filter(p =>\n    p.categoria && p.categoria.id === categoriaElegida.id\n  );\n  tituloCatalogo = `📦 *${categoriaElegida.nombre}*`;\n}\n\nif (!productosFiltrados || productosFiltrados.length === 0) {\n  return {\n    json: {\n      numeroOrigen: switchData.numeroOrigen,\n      empresaId: switchData.empresaId,\n      nombreSesion,\n      pushName: switchData.pushName,\n      mensaje: `${tituloCatalogo}\\n\\n⚠️ No hay productos disponibles en esta categoría.\\n\\nEscribe *productos* para ver otras categorías.`,\n      productosConImagen: []\n    }\n  };\n}\n\nlet mensajeCompleto = `${tituloCatalogo}\\n\\n`;\nconst productosConImagen = [];\nlet contador = 1;\n\nproductosFiltrados.forEach(p => {\n  const numero = contador++;\n  mensajeCompleto += `*${numero}.* ${p.nombre_item}\\n`;\n  if (p.precio) mensajeCompleto += `💰 $${parseFloat(p.precio).toFixed(2)}\\n`;\n  if (p.descripcion) mensajeCompleto += `📝 ${p.descripcion}\\n`;\n  mensajeCompleto += '\\n';\n  if (p.imagen_url && p.imagen_url.trim() !== '' && p.imagen_url !== 'null' && p.imagen_url !== 'undefined') {\n    productosConImagen.push({\n      numero,\n      nombre: p.nombre_item,\n      precio: p.precio ? `${parseFloat(p.precio).toFixed(2)}` : '',\n      descripcion: p.descripcion || '',\n      imagen_url: p.imagen_url\n    });\n  }\n});\n\nmensajeCompleto += `━━━━━━━━━━━━━━━━━━━━━\\n\\n`;\nmensajeCompleto += `🛒 *¿Cómo hacer tu pedido?*\\n\\n`;\nmensajeCompleto += `📋 Escribe: *número,cantidad*\\n`;\nmensajeCompleto += `Ejemplo: *1,2* (producto 1, cantidad 2)\\n\\n`;\nmensajeCompleto += `🏷️ Escribe *productos* para ver otras categorías o *cancelar* para salir.`;\n\nreturn {\n  json: {\n    numeroOrigen: switchData.numeroOrigen,\n    empresaId: switchData.empresaId,\n    nombreSesion,\n    pushName: switchData.pushName,\n    mensaje: mensajeCompleto,\n    productosConImagen\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3104,
+        416
+      ],
+      "id": "177dc37c-d11c-4bc3-b870-33bf72b56af4",
+      "name": "Filtrar por Categoría"
+    },
+    {
+      "parameters": {
+        "url": "=http://host.docker.internal:3000/api/catalogo/publico/{{ $json.empresaId }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3040,
+        528
+      ],
+      "id": "f716e639-3445-4cb6-a51d-43c9d524a1ee",
+      "name": "Obtener productos pedido"
+    },
+    {
+      "parameters": {
+        "jsCode": "const switchData = $('Switch').first().json;\nconst productosResponse = $input.first().json;\nconst productos = productosResponse.data;\n\nlet nombreSesion = switchData.nombreSesion;\nif (nombreSesion && nombreSesion.startsWith(`${switchData.empresaId}_`)) {\n  nombreSesion = nombreSesion.substring(`${switchData.empresaId}_`.length);\n}\n\nconst pedidoStr = switchData.mensaje_usuario;\n\nif (!pedidoStr || pedidoStr.trim() === '') {\n  return {\n    numeroOrigen: switchData.numeroOrigen,\n    empresaId: switchData.empresaId,\n    nombreSesion: nombreSesion,\n    pushName: switchData.pushName,\n    mensaje: \"⚠️ *Formato incorrecto*\\n\\nEscribe el número del producto y la cantidad.\\n\\n📌 Ejemplo: *1,2* (producto 1, cantidad 2)\",\n    tipo: 'error_formato',\n    pedido_temporal: null\n  };\n}\n\nconst pares = pedidoStr.split(';').map(p => p.trim()).filter(p => p);\nconst items = [];\nlet total = 0;\nlet errorMsg = '';\n\nfor (const par of pares) {\n  const partes = par.split(',').map(p => p.trim());\n  if (partes.length !== 2) {\n    errorMsg = `⚠️ *Formato incorrecto*\\n\\nUsa: *número,cantidad*\\n\\n✅ Ejemplo: *1,2* (2 unidades del producto #1)\\n\\n📋 Escribe *productos* para ver el catálogo`;\n    break;\n  }\n  const [numeroStr, cantStr] = partes;\n  const numeroCatalogo = parseInt(numeroStr);\n  const cantidad = parseInt(cantStr);\n  if (isNaN(numeroCatalogo) || isNaN(cantidad) || cantidad <= 0 || numeroCatalogo <= 0) {\n    errorMsg = `⚠️ *Formato incorrecto*\\n\\nUsa: *número,cantidad*\\n\\n✅ Ejemplo: *1,2* (2 unidades del producto #1)\\n\\n📋 Escribe *productos* para ver el catálogo`;\n    break;\n  }\n  const indiceProducto = numeroCatalogo - 1;\n  if (indiceProducto < 0 || indiceProducto >= productos.length) {\n    errorMsg = `⚠️ *Producto #${numeroCatalogo} no existe*\\n\\n📦 Tenemos ${productos.length} productos disponibles\\n\\n📋 Escribe *productos* para ver el catálogo completo`;\n    break;\n  }\n  const producto = productos[indiceProducto];\n  if (!producto.precio || isNaN(parseFloat(producto.precio))) {\n    errorMsg = `⚠️ *Error en producto #${numeroCatalogo}*\\n\\nEl producto no tiene precio válido.\\n\\n📋 Escribe *productos* para ver el catálogo`;\n    break;\n  }\n  const subtotal = parseFloat(producto.precio) * cantidad;\n  total += subtotal;\n  items.push({\n    producto_id: producto.id,\n    nombre: producto.nombre_item,\n    cantidad: cantidad,\n    precio_unitario: parseFloat(producto.precio),\n    subtotal: subtotal\n  });\n}\n\nif (errorMsg) {\n  return {\n    numeroOrigen: switchData.numeroOrigen,\n    empresaId: switchData.empresaId,\n    nombreSesion: nombreSesion,\n    pushName: switchData.pushName,\n    mensaje: errorMsg,\n    tipo: 'error_pedido',\n    pedido_temporal: null\n  };\n}\n\nlet resumen = '🛒 *Resumen de tu pedido:*\\n\\n';\nitems.forEach((item, i) => {\n  resumen += `${i + 1}. ${item.nombre}\\n`;\n  resumen += `   💰 $${item.precio_unitario.toFixed(2)} × ${item.cantidad} = $${item.subtotal.toFixed(2)}\\n\\n`;\n});\nresumen += `━━━━━━━━━━━━━━━━━━━━━\\n`;\nresumen += `💵 *Total: $${total.toFixed(2)}*\\n\\n`;\nresumen += `✅ *Confirmando tu pedido...*`;\n\nreturn {\n  numeroOrigen: switchData.numeroOrigen,\n  empresaId: switchData.empresaId,\n  nombreSesion: nombreSesion,\n  pushName: switchData.pushName,\n  mensaje: resumen,\n  tipo: 'pedir_nombre',\n  pedido_temporal: {\n    items: items,\n    total: total,\n    estado: 'esperando_nombre',\n    fecha_creacion: new Date().toISOString()\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3280,
+        528
+      ],
+      "id": "6e6c7c37-40ef-400b-97f7-7db6ebc23866",
+      "name": "Procesar pedido"
+    },
+    {
+      "parameters": {
+        "jsCode": "const procesarData = $input.first().json;\nconst switchData = $('Switch').first().json;\nlet nombreSesion = switchData.nombreSesion;\nif (nombreSesion && nombreSesion.startsWith(`${switchData.empresaId}_`)) {\n  nombreSesion = nombreSesion.substring(`${switchData.empresaId}_`.length);\n}\nreturn {\n  json: {\n    numeroOrigen: switchData.numeroOrigen,\n    empresaId: switchData.empresaId,\n    nombreSesion: nombreSesion,\n    pushName: switchData.pushName,\n    mensaje: procesarData.mensaje,\n    pedido_temporal: procesarData.pedido_temporal,\n    tipo: procesarData.tipo,\n    abierto: !!switchData.abierto\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3440,
+        528
+      ],
+      "id": "de947ba1-2939-4b97-9b8f-4702dce909ba",
+      "name": "Formatear pedido"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3000/api/pedidos/sesion",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"empresaId\": {{ JSON.stringify($('Formatear pedido').first().json.empresaId) }},\n  \"numeroOrigen\": {{ JSON.stringify($('Formatear pedido').first().json.numeroOrigen || '') }},\n  \"nombreSesion\": {{ JSON.stringify($('Formatear pedido').first().json.nombreSesion || '') }},\n  \"pushName\": {{ JSON.stringify($('Formatear pedido').first().json.pushName || '') }},\n  \"jidOriginal\": {{ JSON.stringify($('Validar y Clasificar').first().json.jidOriginal || '') }},\n  \"numeroDescifrado\": {{ JSON.stringify($('Validar y Clasificar').first().json.numeroDescifrado || false) }},\n  \"estado\": {{ JSON.stringify($('Formatear pedido').first().json.tipo || '') }},\n  \"datosPedido\": {{ JSON.stringify($('Formatear pedido').first().json.pedido_temporal) }}\n}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3600,
+        528
+      ],
+      "id": "ee0e6784-e5c2-4ab1-adc8-b482301ed914",
+      "name": "Guardar Sesión Temporal"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d2cf7f55-32ff-4616-a0c6-7e96df763b09",
+              "name": "abierto",
+              "value": "={{ !!$('Formatear pedido').first().json.abierto }}",
+              "type": "boolean"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3760,
+        528
+      ],
+      "id": "474c1548-23cc-4c64-8bac-4db173fef1d8",
+      "name": "Recuperar"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "check-abierto",
+              "leftValue": "={{ $json.abierto }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3936,
+        528
+      ],
+      "id": "91861729-2aec-4e71-9c24-b1baf752d1f6",
+      "name": "If horario"
+    },
+    {
+      "parameters": {
+        "jsCode": "const recuperarData = $json;\nconst formatData = $('Formatear pedido').first().json;\nreturn {\n  json: {\n    empresaId: formatData.empresaId,\n    nombreSesion: formatData.nombreSesion,\n    numeroOrigen: formatData.numeroOrigen,\n    mensaje: formatData.mensaje,\n    abierto: recuperarData.abierto\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4208,
+        448
+      ],
+      "id": "61097ade-a494-4040-a090-763ae87662b3",
+      "name": "Preparar whatsapp"
+    },
+    {
+      "parameters": {
+        "jsCode": "const config = $('HTTP Request').first().json;\nconst formatearData = $('Formatear pedido').first().json;\nlet nombreSesion = formatearData.nombreSesion;\nif (nombreSesion && nombreSesion.startsWith(`${formatearData.empresaId}_`)) {\n  nombreSesion = nombreSesion.substring(`${formatearData.empresaId}_`.length);\n}\nconst horaInicio = config.hora_inicio || 9;\nconst horaFin = config.hora_fin || 18;\nreturn {\n  json: {\n    numeroOrigen: formatearData.numeroOrigen,\n    empresaId: formatearData.empresaId,\n    nombreSesion: nombreSesion,\n    mensaje: `🔒 *Lo sentimos, estamos cerrados*\\n\\n⏰ Nuestro horario de atención es:\\n📅 Lunes a Viernes\\n🕐 ${horaInicio}:00 hrs - ${horaFin}:00 hrs\\n\\n❌ *No podemos procesar pedidos fuera de horario*\\n\\n✅ Regresa en nuestro horario laboral para hacer tu pedido.\\n\\n📋 Puedes escribir *horarios* para ver más información.`\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4208,
+        592
+      ],
+      "id": "27d1dd86-44e9-4263-b624-ea03f3505074",
+      "name": "Mensaje Pedido Fuera Horario"
+    },
+    {
+      "parameters": {
+        "jsCode": "const switchData = $input.first().json;\nreturn {\n  json: {\n    numeroOrigen: switchData.numeroOrigen,\n    empresaId: switchData.empresaId,\n    nombreSesion: switchData.nombreSesion,\n    mensaje: switchData.mensaje\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3104,
+        704
+      ],
+      "id": "71709563-746d-4410-a0fb-b9e1ccdacfd1",
+      "name": "Respuesta Directa"
+    },
+    {
+      "parameters": {
+        "jsCode": "const codeData = $('Validar y Clasificar').first().json;\nconst webhookData = $('Recibir Mensaje').first().json.body;\nconst config = $('HTTP Request').first().json;\nconst nombreUsuario = webhookData.pushName || 'amigo';\n\nlet nombreSesion = codeData.nombreSesion;\nif (nombreSesion && nombreSesion.startsWith(`${codeData.empresaId}_`)) {\n  nombreSesion = nombreSesion.substring(`${codeData.empresaId}_`.length);\n}\n\nconst mensajeBienvenida = config.mensaje_horario;\nlet mensaje = '';\n\nif (mensajeBienvenida && mensajeBienvenida.trim() !== '') {\n  mensaje = mensajeBienvenida.replace('{nombre}', nombreUsuario);\n} else {\n  mensaje = `👋 ¡Hola ${nombreUsuario}! Bienvenido(a)\\n\\n¿En qué puedo ayudarte hoy?\\n\\n📋 Escribe *productos* para ver el catálogo\\n🕐 Escribe *horarios* para ver horarios\\n📦 Escribe *mis pedidos* para ver tus pedidos\\n\\n💡 *Tip:* Cuando veas el catálogo, pide así:\\n*número,cantidad* (ejemplo: *1,2* para 2 del producto #1)\\n\\n💬 ¿Qué necesitas?`;\n}\n\nreturn {\n  json: {\n    numeroOrigen: codeData.numeroOrigen,\n    empresaId: codeData.empresaId,\n    nombreSesion: nombreSesion,\n    mensaje: mensaje\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3408,
+        848
+      ],
+      "id": "7efb2b4d-2974-4c58-8dda-4e4653d69df0",
+      "name": "Saludo Inicial"
+    },
+    {
+      "parameters": {
+        "url": "=http://host.docker.internal:3000/api/pedidos/usuario/{{ $json.empresaId }}/{{ $json.numeroOrigen }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3296,
+        1024
+      ],
+      "id": "3d697755-0e78-4568-b52a-3120a9b1d0a6",
+      "name": "Obtener pedidos"
+    },
+    {
+      "parameters": {
+        "jsCode": "const pedidosResponse = $input.first().json;\nconst switchData = $('Switch').first().json;\n\nconsole.log('📋 Respuesta de pedidos:', JSON.stringify(pedidosResponse, null, 2));\n\nif (!pedidosResponse.success || !pedidosResponse.data || pedidosResponse.data.length === 0) {\n  return {\n    json: {\n      numeroOrigen: switchData.numeroOrigen,\n      empresaId: switchData.empresaId,\n      nombreSesion: switchData.nombreSesion,\n      pushName: switchData.pushName,\n      mensaje: \"📦 *No tienes pedidos registrados*\\n\\n✅ Escribe *productos* para ver el catálogo y hacer tu primer pedido.\"\n    }\n  };\n}\n\nconst pedidos = pedidosResponse.data;\n\nfunction formatearFecha(fechaISO) {\n  const fecha = new Date(fechaISO);\n  return fecha.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });\n}\n\nfunction formatearEstado(estado) {\n  const estados = { 'pendiente': '⏳ Pendiente', 'confirmado': '✅ Confirmado', 'en_proceso': '🔄 En Proceso', 'entregado': '📦 Entregado', 'cancelado': '❌ Cancelado' };\n  return estados[estado] || estado;\n}\n\nlet mensaje = `📋 *Tus Pedidos (${pedidos.length})*\\n\\n`;\n\npedidos.forEach((pedido, index) => {\n  const fecha = formatearFecha(pedido.fecha_pedido);\n  const estado = formatearEstado(pedido.estado);\n  const total = parseFloat(pedido.total).toFixed(2);\n  let emoji = '⏳';\n  if (pedido.estado === 'confirmado') emoji = '✅';\n  if (pedido.estado === 'en_proceso') emoji = '🔄';\n  if (pedido.estado === 'entregado') emoji = '📦';\n  if (pedido.estado === 'cancelado') emoji = '❌';\n  mensaje += `${emoji} *Pedido #${pedido.id}*\\n`;\n  mensaje += `📅 ${fecha}\\n`;\n  mensaje += `💵 Total: $${total}\\n`;\n  mensaje += `📊 Estado: ${estado}\\n`;\n  if (pedido.items && pedido.items.length > 0) {\n    mensaje += `📦 Productos:\\n`;\n    pedido.items.forEach(item => {\n      const precio = item.precio_unitario || item.precio || 0;\n      mensaje += `   • ${item.cantidad}x ${item.nombre} - $${parseFloat(precio).toFixed(2)}\\n`;\n    });\n  }\n  if (pedido.estado === 'pendiente' || pedido.estado === 'confirmado') {\n    mensaje += `\\n❌ Para cancelar: *cancelar pedido ${pedido.id}*\\n`;\n  }\n  mensaje += `\\n━━━━━━━━━━━━━━━━━━━━━\\n`;\n  if (index < pedidos.length - 1) mensaje += `\\n`;\n});\n\nmensaje += `\\n💬 *¿Necesitas algo más?*\\n`;\nmensaje += `📋 Escribe *productos* para ver el catálogo\\n`;\nmensaje += `📞 Escribe *horarios* para ver nuestro horario`;\n\nreturn {\n  json: {\n    numeroOrigen: switchData.numeroOrigen,\n    empresaId: switchData.empresaId,\n    nombreSesion: switchData.nombreSesion,\n    pushName: switchData.pushName,\n    mensaje: mensaje\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3472,
+        1024
+      ],
+      "id": "43a456b5-e289-4f2a-92c1-7d8d6d1f3bfc",
+      "name": "Formatear pedidos"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3000/api/whatsapp/public/enviar-mensaje",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"empresaId\": {{ JSON.stringify($json.empresaId) }},\n  \"nombreSesion\": {{ JSON.stringify($json.nombreSesion || '') }},\n  \"numeroDestino\": {{ JSON.stringify($json.numeroOrigen || '') }},\n  \"mensaje\": {{ JSON.stringify($json.mensaje || '') }}\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        5488,
+        576
+      ],
+      "id": "673bd932-f0a0-496e-9d78-9d7e1cf730b3",
+      "name": "Enviar WhatsApp"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3000/api/whatsapp/public/enviar-mensaje",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"empresaId\": {{ JSON.stringify($json.empresaId) }},\n  \"nombreSesion\": {{ JSON.stringify($json.nombreSesion || '') }},\n  \"numeroDestino\": {{ JSON.stringify($json.numeroOrigen || '') }},\n  \"mensaje\": {{ JSON.stringify($json.mensaje || '') }}\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3408,
+        192
+      ],
+      "id": "3be5a68b-267a-47d0-a755-0a33a1e70314",
+      "name": "Enviar Catálogo Texto"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst productosConImagen = data.productosConImagen || [];\nif (productosConImagen.length === 0) return [];\nreturn productosConImagen.map((p, i) => ({\n  json: {\n    numeroOrigen: data.numeroOrigen,\n    empresaId: data.empresaId,\n    nombreSesion: data.nombreSesion,\n    imagenUrl: p.imagen_url,\n    caption: `*${p.numero}.* ${p.nombre}\\n${p.precio ? `💰 Precio: $${p.precio}\\n` : ''}${p.descripcion ? `📝 ${p.descripcion}` : ''}`,\n    orden: i\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3392,
+        352
+      ],
+      "id": "b32bede9-a5ed-4c3a-9745-c5d59cd2d134",
+      "name": "Preparar Imágenes"
+    },
+    {
+      "parameters": {
+        "amount": 3
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3568,
+        352
+      ],
+      "id": "38515646-d2c1-4c7e-bea0-18b79c371e37",
+      "name": "Wait 3s",
+      "webhookId": "8aa070f9-2b46-4c76-aa2b-d42047dd49dd"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3000/api/whatsapp/public/enviar-imagen",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"empresaId\": {{ JSON.stringify($json.empresaId) }},\n  \"nombreSesion\": {{ JSON.stringify($json.nombreSesion || '') }},\n  \"numeroDestino\": {{ JSON.stringify($json.numeroOrigen || '') }},\n  \"imagenUrl\": {{ JSON.stringify($json.imagenUrl || '') }},\n  \"caption\": {{ JSON.stringify($json.caption || '') }}\n}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3744,
+        352
+      ],
+      "id": "0f7903db-ed18-4cce-a042-2326b0561ef4",
+      "name": "Enviar Imagen Producto"
+    },
+    {
+      "parameters": {
+        "url": "=http://host.docker.internal:3000/api/pedidos/detalle/{{ $json.pedidoId }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3280,
+        1200
+      ],
+      "id": "8907c7b2-7754-404a-975c-297a82761e99",
+      "name": "Obtener Detalle Pedido"
+    },
+    {
+      "parameters": {
+        "jsCode": "const switchData = $('Switch').first().json;\nconst detalleResponse = $input.first().json;\n\nif (!detalleResponse.success || !detalleResponse.data) {\n  return { json: { numeroOrigen: switchData.numeroOrigen, empresaId: switchData.empresaId, nombreSesion: switchData.nombreSesion, pushName: switchData.pushName, mensaje: `❌ *Pedido #${switchData.pedidoId} no encontrado*\\n\\n📋 Escribe *mis pedidos* para ver tus pedidos activos.`, esError: true } };\n}\n\nconst pedido = detalleResponse.data;\n\nif (pedido.telefono_cliente !== switchData.numeroOrigen) {\n  return { json: { numeroOrigen: switchData.numeroOrigen, empresaId: switchData.empresaId, nombreSesion: switchData.nombreSesion, pushName: switchData.pushName, mensaje: `❌ *No tienes permiso para cancelar este pedido*\\n\\n📋 Escribe *mis pedidos* para ver tus pedidos.`, esError: true } };\n}\n\nif (pedido.estado === 'cancelado') {\n  return { json: { numeroOrigen: switchData.numeroOrigen, empresaId: switchData.empresaId, nombreSesion: switchData.nombreSesion, pushName: switchData.pushName, mensaje: `ℹ️ *El pedido #${switchData.pedidoId} ya está cancelado*\\n\\n📋 Escribe *mis pedidos* para ver tus otros pedidos.`, esError: true } };\n}\n\nif (pedido.estado === 'entregado') {\n  return { json: { numeroOrigen: switchData.numeroOrigen, empresaId: switchData.empresaId, nombreSesion: switchData.nombreSesion, pushName: switchData.pushName, mensaje: `❌ *No puedes cancelar el pedido #${switchData.pedidoId}*\\n\\nEl pedido ya fue entregado.\\n\\n📞 Contacta con soporte si necesitas ayuda.`, esError: true } };\n}\n\nif (pedido.estado === 'enviado' || pedido.estado === 'en_proceso') {\n  return { json: { numeroOrigen: switchData.numeroOrigen, empresaId: switchData.empresaId, nombreSesion: switchData.nombreSesion, pushName: switchData.pushName, mensaje: `⚠️ *El pedido #${switchData.pedidoId} ya está en camino*\\n\\nNo puede ser cancelado automáticamente.\\n\\n📞 Contacta con soporte para cancelarlo.`, esError: true } };\n}\n\nreturn { json: { numeroOrigen: switchData.numeroOrigen, empresaId: switchData.empresaId, nombreSesion: switchData.nombreSesion, pushName: switchData.pushName, pedidoId: switchData.pedidoId, pedidoData: pedido, esError: false } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3472,
+        1200
+      ],
+      "id": "f19f1eef-57cb-4814-bb4d-9cbde3ac7427",
+      "name": "Validar Pedido"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "check-error",
+              "leftValue": "={{ $json.esError }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "false"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3664,
+        1200
+      ],
+      "id": "53e58dd6-1255-4305-9b9e-10f58a8ae664",
+      "name": "If Validación OK"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=http://host.docker.internal:3000/api/pedidos/{{ $json.pedidoId }}/cancelar",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"empresaId\": {{ JSON.stringify($json.empresaId) }},\n  \"telefono\": {{ JSON.stringify($json.numeroOrigen) }}\n}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3936,
+        1104
+      ],
+      "id": "63484af7-4f0e-4b85-82f4-7214dae84366",
+      "name": "Cancelar Pedido HTTP"
+    },
+    {
+      "parameters": {
+        "jsCode": "const cancelResponse = $input.first().json;\nconst validarData = $('Validar Pedido').first().json;\nif (cancelResponse.success) {\n  const total = validarData.pedidoData.total || 0;\n  return { json: { numeroOrigen: validarData.numeroOrigen, empresaId: validarData.empresaId, nombreSesion: validarData.nombreSesion, pushName: validarData.pushName, mensaje: `✅ *Pedido #${validarData.pedidoId} cancelado exitosamente*\\n\\n💵 Total cancelado: $${parseFloat(total).toFixed(2)}\\n\\n━━━━━━━━━━━━━━━━━━━━━\\n\\n📋 Escribe *pedidos* para ver tu historial\\n🛒 Escribe *productos* para hacer un nuevo pedido` } };\n} else {\n  return { json: { numeroOrigen: validarData.numeroOrigen, empresaId: validarData.empresaId, nombreSesion: validarData.nombreSesion, pushName: validarData.pushName, mensaje: `❌ *Error al cancelar el pedido #${validarData.pedidoId}*\\n\\n${cancelResponse.mensaje || 'Por favor intenta de nuevo'}` } };\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4160,
+        1104
+      ],
+      "id": "c8f4f51b-528b-4bdb-8c1e-a56763abf579",
+      "name": "Formatear Respuesta Cancelación"
+    },
+    {
+      "parameters": {
+        "jsCode": "const validarData = $input.first().json;\nreturn { json: { numeroOrigen: validarData.numeroOrigen, empresaId: validarData.empresaId, nombreSesion: validarData.nombreSesion, pushName: validarData.pushName, mensaje: validarData.mensaje } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3968,
+        1296
+      ],
+      "id": "eaa43108-a125-4ee6-b45e-642a1fa67739",
+      "name": "Pasar Error"
+    },
+    {
+      "parameters": {
+        "content": "Flujo inicial",
+        "height": 496,
+        "width": 1536,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        0,
+        0
+      ],
+      "typeVersion": 1,
+      "id": "c7ca2ce3-1cbd-41ac-9dec-5c25abe36f50",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "Flujo para pymes de productos y pedidos",
+        "height": 1456,
+        "width": 2272,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        2400,
+        32
+      ],
+      "typeVersion": 1,
+      "id": "2cce0e76-e180-4752-9f3f-cf841f2dfdf8",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "Validar y clasificar los mensajes",
+        "height": 208
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1728,
+        544
+      ],
+      "typeVersion": 1,
+      "id": "6d125cd8-76d8-4674-9fd6-d0fd6b02ec18",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "Switch principal\n",
+        "height": 560,
+        "color": 2
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        2048,
+        400
+      ],
+      "typeVersion": 1,
+      "id": "bfdcef31-b153-4738-a53f-1e4ebdccc550",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-mensaje",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        32,
+        64
+      ],
+      "id": "c8c6946b-77d9-4014-923a-03eb1eb0bd5d",
+      "name": "Recibir Mensaje",
+      "webhookId": "7c272506-5f62-456f-a7c2-9dd935c3ec22"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * 1-7"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        800,
+        2400
+      ],
+      "id": "49d4c505-b5b5-4026-bcfa-a2d0df1999e0",
+      "name": "Verificar Stock Bajo"
+    },
+    {
+      "parameters": {
+        "url": "http://host.docker.internal:3000/api/catalogo/stock/bajo-todas-empresas",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "umbral",
+              "value": "5"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1008,
+        2400
+      ],
+      "id": "36dd2fe6-02a0-450f-a746-d7f2ced6aeef",
+      "name": "Obtener Stock Bajo"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "dac14bd8-5608-45be-b834-4ffe3d5bb61a",
+              "leftValue": "={{ $json.total_empresas }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1216,
+        2400
+      ],
+      "id": "3af0673c-1de1-49e1-acb8-3209dbe76388",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "jsCode": "console.log('Sin alertas hoy');\nreturn { json: { status: 'sin_alertas' } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1472,
+        2512
+      ],
+      "id": "89254aed-a365-474b-8c7a-d8845b756f67",
+      "name": "Sin Alertas Hoy"
+    },
+    {
+      "parameters": {
+        "jsCode": "const empresas = $input.first().json.data;\nreturn empresas.map(empresa => ({ json: empresa }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1488,
+        2320
+      ],
+      "id": "48a5399f-b00b-4de3-9ba3-6a4cb65a2403",
+      "name": "Separar por Empresa"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "befb284f-1eb7-45e9-9351-313f4815bd45",
+              "leftValue": "={{ $json.emailDestino }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1696,
+        2320
+      ],
+      "id": "95a420a5-a948-4121-a8eb-f49f5b568449",
+      "name": "¿Tiene Email?"
+    },
+    {
+      "parameters": {
+        "jsCode": "console.log(`Sin email: empresa ${$input.first().json.empresaId}`);\nreturn { json: { status: 'omitida' } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1904,
+        2416
+      ],
+      "id": "a69a3698-dade-4b2d-8111-499792870a37",
+      "name": "Sin Email - Omitir"
+    },
+    {
+      "parameters": {
+        "jsCode": "const empresa = $input.first().json;\nconst filasProductos = empresa.productos.map(p => {\n  let colorStock, labelStock;\n  if (p.stock === 0) { colorStock = '#dc3545'; labelStock = 'AGOTADO'; }\n  else if (p.stock <= 2) { colorStock = '#fd7e14'; labelStock = `${p.stock} uds - CRÍTICO`; }\n  else { colorStock = '#ffc107'; labelStock = `${p.stock} uds - BAJO`; }\n  const precio = p.precio ? `$${parseFloat(p.precio).toFixed(2)}` : '—';\n  return `<tr><td style=\"padding:10px;border-bottom:1px solid #eee\">${p.nombre}</td><td style=\"padding:10px;border-bottom:1px solid #eee;text-align:center\"><span style=\"background:${colorStock};color:#fff;padding:3px 10px;border-radius:12px;font-size:12px\">${labelStock}</span></td><td style=\"padding:10px;border-bottom:1px solid #eee;text-align:center\">${precio}</td></tr>`;\n}).join('');\nconst fecha = new Date().toLocaleDateString('es-MX', { weekday:'long', year:'numeric', month:'long', day:'numeric' });\nconst htmlEmail = `<div style=\"font-family:Arial,sans-serif;max-width:600px;margin:0 auto\"><div style=\"background:#FF6B35;padding:25px;border-radius:8px 8px 0 0\"><h2 style=\"color:#fff;margin:0\">📦 Alerta de Stock Bajo</h2><p style=\"color:rgba(255,255,255,0.85);margin:5px 0 0\">${empresa.nombreEmpresa}</p></div><div style=\"padding:25px;border:1px solid #eee\"><p>Hola <strong>${empresa.nombreContacto}</strong>,</p><p>Reporte del <strong>${fecha}</strong>. Los siguientes productos necesitan reabastecimiento:</p><table style=\"width:100%;border-collapse:collapse\"><thead><tr style=\"background:#f8f9fa\"><th style=\"padding:10px;text-align:left;border-bottom:2px solid #eee\">Producto</th><th style=\"padding:10px;text-align:center;border-bottom:2px solid #eee\">Stock</th><th style=\"padding:10px;text-align:center;border-bottom:2px solid #eee\">Precio</th></tr></thead><tbody>${filasProductos}</tbody></table><p style=\"margin-top:20px;font-size:13px;color:#888\">Umbral configurado: ≤ ${empresa.umbralUsado} unidades</p></div><div style=\"background:#f8f9fa;padding:15px;text-align:center;font-size:12px;color:#aaa\">Notificación automática · ${empresa.nombreEmpresa}</div></div>`;\nreturn { json: { emailDestino: empresa.emailDestino, nombreEmpresa: empresa.nombreEmpresa, asunto: `⚠️ ${empresa.totalProductosBajos} producto(s) con stock bajo — ${empresa.nombreEmpresa}`, htmlEmail } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1904,
+        2224
+      ],
+      "id": "f90df867-f328-4afc-8fdf-292b33846155",
+      "name": "Construir Email HTML"
+    },
+    {
+      "parameters": {
+        "fromEmail": "juabngonzalez4@gmail.com",
+        "toEmail": "={{ $json.emailDestino }}",
+        "subject": "={{ $json.asunto }}",
+        "html": "={{ $json.htmlEmail }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2112,
+        2224
+      ],
+      "id": "188c91fe-a286-4428-8a76-0b4c9eaabdf5",
+      "name": "Send email",
+      "webhookId": "a8508c48-de37-4166-afe5-1c4de5495511",
+      "credentials": {
+        "smtp": {
+          "id": "iR6StcDr8CBoBYP6",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "Verificar y alerta de stock bajo",
+        "height": 592,
+        "width": 1728,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        656,
+        2144
+      ],
+      "typeVersion": 1,
+      "id": "1caf9c7d-d425-49d6-9f22-4a8dbd385032",
+      "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://host.docker.internal:3000/api/chatbot/analizar-mensaje/{{ $('Recibir Mensaje').first().json.body.empresaId }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"mensaje\": \"{{ $('Recibir Mensaje').first().json.body.mensaje }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1088,
+        48
+      ],
+      "id": "0b08745f-bb8b-432f-9ea9-321c3e005952",
+      "name": "Analizar Mensaje BD"
+    },
+    {
+      "parameters": {
+        "model": "llama-3.1-8b-instant",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        496,
+        320
+      ],
+      "id": "6209cccf-0ed1-496b-874f-5a09af43dbec",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "id": "wFuRBaNBnwrhjYlY",
+          "name": "Groq account 2"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Analizar Mensaje BD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar y Clasificar": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Mostrar Horario",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Obtener productos catálogo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Obtener productos pedido",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respuesta Directa",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Saludo Inicial",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Obtener pedidos",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enviar WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Obtener Detalle Pedido",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Obtener productos por categoría",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener productos catálogo": {
+      "main": [
+        [
+          {
+            "node": "Formatear catálogo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatear catálogo": {
+      "main": [
+        [
+          {
+            "node": "Enviar Catálogo Texto",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Preparar Imágenes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener productos por categoría": {
+      "main": [
+        [
+          {
+            "node": "Filtrar por Categoría",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrar por Categoría": {
+      "main": [
+        [
+          {
+            "node": "Enviar Catálogo Texto",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Preparar Imágenes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Imágenes": {
+      "main": [
+        [
+          {
+            "node": "Wait 3s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 3s": {
+      "main": [
+        [
+          {
+            "node": "Enviar Imagen Producto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar Imagen Producto": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Saludo Inicial": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respuesta Directa": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mostrar Horario": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener pedidos": {
+      "main": [
+        [
+          {
+            "node": "Formatear pedidos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatear pedidos": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener productos pedido": {
+      "main": [
+        [
+          {
+            "node": "Procesar pedido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Procesar pedido": {
+      "main": [
+        [
+          {
+            "node": "Formatear pedido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatear pedido": {
+      "main": [
+        [
+          {
+            "node": "Guardar Sesión Temporal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar Sesión Temporal": {
+      "main": [
+        [
+          {
+            "node": "Recuperar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recuperar": {
+      "main": [
+        [
+          {
+            "node": "If horario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If horario": {
+      "main": [
+        [
+          {
+            "node": "Preparar whatsapp",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mensaje Pedido Fuera Horario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar whatsapp": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mensaje Pedido Fuera Horario": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener Detalle Pedido": {
+      "main": [
+        [
+          {
+            "node": "Validar Pedido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar Pedido": {
+      "main": [
+        [
+          {
+            "node": "If Validación OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Validación OK": {
+      "main": [
+        [
+          {
+            "node": "Cancelar Pedido HTTP",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pasar Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cancelar Pedido HTTP": {
+      "main": [
+        [
+          {
+            "node": "Formatear Respuesta Cancelación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatear Respuesta Cancelación": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pasar Error": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recibir Mensaje": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar Stock Bajo": {
+      "main": [
+        [
+          {
+            "node": "Obtener Stock Bajo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener Stock Bajo": {
+      "main": [
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "Separar por Empresa",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sin Alertas Hoy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Separar por Empresa": {
+      "main": [
+        [
+          {
+            "node": "¿Tiene Email?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Tiene Email?": {
+      "main": [
+        [
+          {
+            "node": "Construir Email HTML",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sin Email - Omitir",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Construir Email HTML": {
+      "main": [
+        [
+          {
+            "node": "Send email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analizar Mensaje BD": {
+      "main": [
+        [
+          {
+            "node": "Validar y Clasificar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "6743515d-e34b-4343-9ffa-51c1754e95cd",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "06f3abd0c47bf03702da44aaccc72833bb792a76d9bfba39d8fccc46f2369aad"
+  },
+  "id": "uMONhfgiA3ZTBuwo",
+  "tags": []
+}

@@ -1,27 +1,17 @@
-// controllers/catalogoController.js
-// ============================================================
-// CONTROLADOR DE CATÁLOGO + STOCK BAJO INTEGRADO
-// ============================================================
-
-const { CatalogoItem } = require('../models');
-const { Empresa } = require('../models'); // Asegúrate que exportas Empresa en models/index.js
+const { CatalogoItem, CategoriaProducto, Empresa } = require('../models');
 const { Op } = require('sequelize');
 
 const catalogoController = {
 
-  // ─────────────────────────────────────────────────────────
   // GET /api/catalogo/publico/:empresaId
-  // ─────────────────────────────────────────────────────────
   obtenerCatalogoPublico: async (req, res) => {
     try {
       const { empresaId } = req.params;
 
       const items = await CatalogoItem.findAll({
-        where: {
-          empresa_id: empresaId,
-          disponible: true
-        },
-        order: [['tipo_item', 'ASC'], ['nombre_item', 'ASC']]
+        where: { empresa_id: empresaId, disponible: true },
+        include: [{ model: CategoriaProducto, as: 'categoria', attributes: ['id', 'nombre'] }],
+        order: [['nombre_item', 'ASC']]
       });
 
       return res.json({
@@ -32,9 +22,8 @@ const catalogoController = {
           nombre_item: item.nombre_item,
           descripcion: item.descripcion,
           precio: item.precio,
-          tipo_item: item.tipo_item,
           imagen_url: item.imagen_url,
-          categoria: item.categoria,
+          categoria: item.categoria || null,
           stock: item.stock,
           disponible: item.disponible
         }))
@@ -46,29 +35,28 @@ const catalogoController = {
     }
   },
 
-  // ─────────────────────────────────────────────────────────
-  // GET /api/catalogo/ (privado, requiere token)
-  // ─────────────────────────────────────────────────────────
+  // GET /api/catalogo/
   obtenerCatalogo: async (req, res) => {
     try {
       const empresaId = req.usuario.empresa_id;
-      const { tipo, categoria, disponible, busqueda } = req.query;
+      const { categoria_id, disponible, busqueda } = req.query;
 
       const where = { empresa_id: empresaId };
 
-      if (tipo) where.tipo_item = tipo;
-      if (categoria) where.categoria = categoria;
+      if (categoria_id) where.categoria_id = categoria_id;
       if (disponible !== undefined) where.disponible = disponible === 'true';
       if (busqueda) {
         where[Op.or] = [
           { nombre_item: { [Op.like]: `%${busqueda}%` } },
-          { descripcion: { [Op.like]: `%${busqueda}%` } }
+          { descripcion: { [Op.like]: `%${busqueda}%` } },
+          { tags: { [Op.like]: `%${busqueda}%` } }
         ];
       }
 
       const items = await CatalogoItem.findAll({
         where,
-        order: [['tipo_item', 'ASC'], ['nombre_item', 'ASC']]
+        include: [{ model: CategoriaProducto, as: 'categoria', attributes: ['id', 'nombre'] }],
+        order: [['nombre_item', 'ASC']]
       });
 
       return res.json({ success: true, total: items.length, data: items });
@@ -79,151 +67,147 @@ const catalogoController = {
     }
   },
 
-  // ─────────────────────────────────────────────────────────
   // POST /api/catalogo/
-  // ─────────────────────────────────────────────────────────
   crearItem: async (req, res) => {
     try {
       const empresaId = req.usuario.empresa_id;
-      const datos = req.body;
+      const { nombre_item, descripcion, precio, imagen_url, stock, disponible, categoria_id, tags } = req.body;
 
       const nuevoItem = await CatalogoItem.create({
-        ...datos,
         empresa_id: empresaId,
+        nombre_item, descripcion, precio,
+        imagen_url, stock,
+        disponible: disponible !== undefined ? disponible : true,
+        categoria_id: categoria_id || null,
+        tags,
         fecha_creacion: new Date(),
         fecha_actualizacion: new Date()
       });
 
-      return res.status(201).json({
-        success: true,
-        message: 'Item creado exitosamente',
-        data: nuevoItem
+      const itemConCategoria = await CatalogoItem.findByPk(nuevoItem.id, {
+        include: [{ model: CategoriaProducto, as: 'categoria', attributes: ['id', 'nombre'] }]
       });
 
+      return res.status(201).json({ success: true, message: 'Producto creado exitosamente', data: itemConCategoria });
+
     } catch (error) {
-      console.error('Error al crear item:', error);
-      return res.status(500).json({ success: false, message: 'Error al crear item' });
+      console.error('Error al crear producto:', error);
+      return res.status(500).json({ success: false, message: 'Error al crear producto' });
     }
   },
 
-  // ─────────────────────────────────────────────────────────
   // GET /api/catalogo/:id
-  // ─────────────────────────────────────────────────────────
   obtenerItem: async (req, res) => {
     try {
       const empresaId = req.usuario.empresa_id;
       const { id } = req.params;
 
       const item = await CatalogoItem.findOne({
-        where: { id, empresa_id: empresaId }
+        where: { id, empresa_id: empresaId },
+        include: [{ model: CategoriaProducto, as: 'categoria', attributes: ['id', 'nombre'] }]
       });
 
-      if (!item) {
-        return res.status(404).json({ success: false, message: 'Item no encontrado' });
-      }
+      if (!item) return res.status(404).json({ success: false, message: 'Producto no encontrado' });
 
       return res.json({ success: true, data: item });
 
     } catch (error) {
-      console.error('Error al obtener item:', error);
-      return res.status(500).json({ success: false, message: 'Error al obtener item' });
+      console.error('Error al obtener producto:', error);
+      return res.status(500).json({ success: false, message: 'Error al obtener producto' });
     }
   },
 
-  // ─────────────────────────────────────────────────────────
   // PUT /api/catalogo/:id
-  // ─────────────────────────────────────────────────────────
   actualizarItem: async (req, res) => {
     try {
       const empresaId = req.usuario.empresa_id;
       const { id } = req.params;
-      const datos = req.body;
+      const { nombre_item, descripcion, precio, imagen_url, stock, disponible, categoria_id, tags } = req.body;
 
-      const item = await CatalogoItem.findOne({
-        where: { id, empresa_id: empresaId }
+      const item = await CatalogoItem.findOne({ where: { id, empresa_id: empresaId } });
+
+      if (!item) return res.status(404).json({ success: false, message: 'Producto no encontrado' });
+
+      await item.update({
+        nombre_item, descripcion, precio,
+        imagen_url, stock, disponible,
+        categoria_id: categoria_id ?? item.categoria_id,
+        tags,
+        fecha_actualizacion: new Date()
       });
 
-      if (!item) {
-        return res.status(404).json({ success: false, message: 'Item no encontrado' });
-      }
+      const itemActualizado = await CatalogoItem.findByPk(id, {
+        include: [{ model: CategoriaProducto, as: 'categoria', attributes: ['id', 'nombre'] }]
+      });
 
-      await item.update({ ...datos, fecha_actualizacion: new Date() });
-
-      return res.json({ success: true, message: 'Item actualizado exitosamente', data: item });
+      return res.json({ success: true, message: 'Producto actualizado exitosamente', data: itemActualizado });
 
     } catch (error) {
-      console.error('Error al actualizar item:', error);
-      return res.status(500).json({ success: false, message: 'Error al actualizar item' });
+      console.error('Error al actualizar producto:', error);
+      return res.status(500).json({ success: false, message: 'Error al actualizar producto' });
     }
   },
 
-  // ─────────────────────────────────────────────────────────
   // DELETE /api/catalogo/:id
-  // ─────────────────────────────────────────────────────────
   eliminarItem: async (req, res) => {
     try {
       const empresaId = req.usuario.empresa_id;
       const { id } = req.params;
 
-      const item = await CatalogoItem.findOne({
-        where: { id, empresa_id: empresaId }
-      });
+      const item = await CatalogoItem.findOne({ where: { id, empresa_id: empresaId } });
 
-      if (!item) {
-        return res.status(404).json({ success: false, message: 'Item no encontrado' });
-      }
+      if (!item) return res.status(404).json({ success: false, message: 'Producto no encontrado' });
 
       await item.destroy();
 
-      return res.json({ success: true, message: 'Item eliminado exitosamente' });
+      return res.json({ success: true, message: 'Producto eliminado exitosamente' });
 
     } catch (error) {
-      console.error('Error al eliminar item:', error);
-      return res.status(500).json({ success: false, message: 'Error al eliminar item' });
+      console.error('Error al eliminar producto:', error);
+      return res.status(500).json({ success: false, message: 'Error al eliminar producto' });
     }
   },
 
-  // ─────────────────────────────────────────────────────────
-  // GET /api/catalogo/buscar?q=...&tipo=...
-  // ─────────────────────────────────────────────────────────
+  // GET /api/catalogo/buscar
   buscarItems: async (req, res) => {
     try {
       const empresaId = req.usuario.empresa_id;
-      const { busqueda, tipo } = req.query;
+      const { busqueda, categoria_id } = req.query;
 
       const where = { empresa_id: empresaId };
-      if (tipo) where.tipo_item = tipo;
+      if (categoria_id) where.categoria_id = categoria_id;
       if (busqueda) {
         where[Op.or] = [
           { nombre_item: { [Op.like]: `%${busqueda}%` } },
-          { descripcion: { [Op.like]: `%${busqueda}%` } }
+          { descripcion: { [Op.like]: `%${busqueda}%` } },
+          { tags: { [Op.like]: `%${busqueda}%` } }
         ];
       }
 
-      const items = await CatalogoItem.findAll({ where, limit: 20 });
+      const items = await CatalogoItem.findAll({
+        where,
+        include: [{ model: CategoriaProducto, as: 'categoria', attributes: ['id', 'nombre'] }],
+        limit: 20
+      });
 
       return res.json({ success: true, total: items.length, data: items });
 
     } catch (error) {
-      console.error('Error al buscar items:', error);
-      return res.status(500).json({ success: false, message: 'Error al buscar items' });
+      console.error('Error al buscar productos:', error);
+      return res.status(500).json({ success: false, message: 'Error al buscar productos' });
     }
   },
 
-  // ─────────────────────────────────────────────────────────
   // GET /api/catalogo/categorias
-  // ─────────────────────────────────────────────────────────
   obtenerCategorias: async (req, res) => {
     try {
       const empresaId = req.usuario.empresa_id;
 
-      const items = await CatalogoItem.findAll({
-        where: { empresa_id: empresaId, categoria: { [Op.not]: null } },
-        attributes: ['categoria'],
-        group: ['categoria']
+      const categorias = await CategoriaProducto.findAll({
+        where: { empresa_id: empresaId, activa: true },
+        order: [['nombre', 'ASC']]
       });
 
-      const categorias = items.map(i => i.categoria);
       return res.json({ success: true, data: categorias });
 
     } catch (error) {
@@ -232,44 +216,86 @@ const catalogoController = {
     }
   },
 
-  // ─────────────────────────────────────────────────────────
-  // GET /api/catalogo/categorias-disponibles
-  // ─────────────────────────────────────────────────────────
-  obtenerCategoriasDisponibles: async (req, res) => {
-    const categorias = [
-      { grupo: 'Restaurantes/Comida', valores: ['comida','bebidas','postres','snacks'] },
-      { grupo: 'Belleza/Estética', valores: ['cortes','tintes','peinados','manicure','pedicure','depilacion','faciales','masajes'] },
-      { grupo: 'Barbería', valores: ['corte_caballero','barba','afeitado'] },
-      { grupo: 'Spa/Wellness', valores: ['masaje_terapeutico','masaje_relajante','tratamientos_corporales','aromaterapia'] },
-      { grupo: 'Médico/Dental', valores: ['consulta','procedimiento','examenes','cirugia'] },
-      { grupo: 'Tienda', valores: ['ropa','accesorios','electronicos','hogar'] },
-      { grupo: 'Otros', valores: ['otro'] }
-    ];
-    return res.json({ success: true, data: categorias });
-  },
-
-  // ─────────────────────────────────────────────────────────
-  // POST /api/catalogo/categorias (agregar categoría custom)
-  // ─────────────────────────────────────────────────────────
+  // POST /api/catalogo/categorias
   agregarCategoria: async (req, res) => {
-    return res.json({ success: true, message: 'Funcionalidad de categorías custom próximamente' });
+    try {
+      const empresaId = req.usuario.empresa_id;
+      const { nombre, descripcion } = req.body;
+
+      if (!nombre || !nombre.trim()) {
+        return res.status(400).json({ success: false, message: 'El nombre es requerido' });
+      }
+
+      const categoria = await CategoriaProducto.create({
+        empresa_id: empresaId,
+        nombre: nombre.trim(),
+        descripcion: descripcion || null
+      });
+
+      return res.status(201).json({ success: true, data: categoria });
+
+    } catch (error) {
+      console.error('Error al crear categoría:', error);
+      return res.status(500).json({ success: false, message: 'Error al crear categoría' });
+    }
   },
 
-  // ─────────────────────────────────────────────────────────
+  // DELETE /api/catalogo/categorias/:id
+  eliminarCategoria: async (req, res) => {
+    try {
+      const empresaId = req.usuario.empresa_id;
+      const { id } = req.params;
+
+      const categoria = await CategoriaProducto.findOne({ where: { id, empresa_id: empresaId } });
+
+      if (!categoria) return res.status(404).json({ success: false, message: 'Categoría no encontrada' });
+
+      categoria.activa = false;
+      await categoria.save();
+
+      return res.json({ success: true, message: 'Categoría eliminada' });
+
+    } catch (error) {
+      console.error('Error al eliminar categoría:', error);
+      return res.status(500).json({ success: false, message: 'Error al eliminar categoría' });
+    }
+  },
+
+  obtenerCategoriasPublico: async (req, res) => {
+    try {
+      const { empresaId } = req.params;
+
+      const categorias = await CategoriaProducto.findAll({
+        where: { empresa_id: empresaId, activa: true },
+        include: [{
+          model: CatalogoItem,
+          as: 'items',
+          where: { disponible: true },
+          attributes: [],
+          required: true  // Solo categorías que tengan al menos 1 producto disponible
+        }],
+        order: [['nombre', 'ASC']]
+      });
+
+      return res.json({ success: true, data: categorias });
+
+    } catch (error) {
+      console.error('Error al obtener categorías públicas:', error);
+      return res.status(500).json({ success: false, message: 'Error al obtener categorías' });
+    }
+  },
+
   // GET /api/catalogo/estadisticas
-  // ─────────────────────────────────────────────────────────
   obtenerEstadisticas: async (req, res) => {
     try {
       const empresaId = req.usuario.empresa_id;
 
-      const [totalProductos, totalServicios, sinStock, stockBajo] = await Promise.all([
-        CatalogoItem.count({ where: { empresa_id: empresaId, tipo_item: 'producto' } }),
-        CatalogoItem.count({ where: { empresa_id: empresaId, tipo_item: 'servicio' } }),
-        CatalogoItem.count({ where: { empresa_id: empresaId, tipo_item: 'producto', stock: 0 } }),
+      const [totalProductos, sinStock, stockBajo] = await Promise.all([
+        CatalogoItem.count({ where: { empresa_id: empresaId } }),
+        CatalogoItem.count({ where: { empresa_id: empresaId, stock: 0 } }),
         CatalogoItem.count({
           where: {
             empresa_id: empresaId,
-            tipo_item: 'producto',
             stock: { [Op.and]: [{ [Op.not]: null }, { [Op.gt]: 0 }, { [Op.lte]: 5 }] }
           }
         })
@@ -277,7 +303,7 @@ const catalogoController = {
 
       return res.json({
         success: true,
-        data: { totalProductos, totalServicios, sinStock, stockBajo }
+        data: { totalProductos, sinStock, stockBajo }
       });
 
     } catch (error) {
@@ -286,31 +312,17 @@ const catalogoController = {
     }
   },
 
-  // ═══════════════════════════════════════════════════════════
-  // 🔔 NUEVAS FUNCIONES DE STOCK BAJO PARA N8N
-  // ═══════════════════════════════════════════════════════════
-
-  // ─────────────────────────────────────────────────────────
-  // GET /api/catalogo/stock/bajo-todas-empresas?umbral=5
-  // Usado por n8n Schedule para obtener TODAS las empresas
-  // con productos en stock bajo de una sola llamada
-  // ─────────────────────────────────────────────────────────
+  // GET /api/catalogo/stock/bajo-todas-empresas
   obtenerStockBajoTodasEmpresas: async (req, res) => {
     try {
       const umbral = parseInt(req.query.umbral) || 5;
 
-      // 1. Traer todos los productos con stock bajo
       const productosBajos = await CatalogoItem.findAll({
         where: {
-          tipo_item: 'producto',
           disponible: true,
-          stock: {
-            [Op.and]: [
-              { [Op.not]: null },
-              { [Op.lte]: umbral }
-            ]
-          }
+          stock: { [Op.and]: [{ [Op.not]: null }, { [Op.lte]: umbral }] }
         },
+        include: [{ model: CategoriaProducto, as: 'categoria', attributes: ['id', 'nombre'] }],
         order: [['empresa_id', 'ASC'], ['stock', 'ASC']]
       });
 
@@ -318,17 +330,12 @@ const catalogoController = {
         return res.json({ success: true, umbral, total_empresas: 0, data: [] });
       }
 
-      // 2. IDs únicos de empresas afectadas
       const empresaIds = [...new Set(productosBajos.map(p => p.empresa_id))];
-
-      // 3. Traer datos de esas empresas (email, nombre, etc.)
       const empresas = await Empresa.findAll({
         where: { id: { [Op.in]: empresaIds } },
-        // ⚠️ AJUSTA estos campos según tu modelo Empresa real
         attributes: ['id', 'nombre', 'correo_contacto']
       });
 
-      // 4. Agrupar productos por empresa
       const resultado = empresas.map(empresa => {
         const productosDeEmpresa = productosBajos
           .filter(p => p.empresa_id === empresa.id)
@@ -336,28 +343,21 @@ const catalogoController = {
             id: p.id,
             nombre: p.nombre_item,
             stock: p.stock,
-            sku: p.sku || null,
             precio: p.precio ? parseFloat(p.precio) : null,
-            categoria: p.categoria
+            categoria: p.categoria?.nombre || null
           }));
 
         return {
           empresaId: empresa.id,
           nombreEmpresa: empresa.nombre,
           emailDestino: empresa.correo_contacto,
-          nombreContacto: empresa.nombre,
           umbralUsado: umbral,
           totalProductosBajos: productosDeEmpresa.length,
           productos: productosDeEmpresa
         };
       });
 
-      return res.json({
-        success: true,
-        umbral,
-        total_empresas: resultado.length,
-        data: resultado
-      });
+      return res.json({ success: true, umbral, total_empresas: resultado.length, data: resultado });
 
     } catch (error) {
       console.error('❌ Error obtenerStockBajoTodasEmpresas:', error);
@@ -365,10 +365,7 @@ const catalogoController = {
     }
   },
 
-  // ─────────────────────────────────────────────────────────
-  // GET /api/catalogo/stock/bajo/:empresaId?umbral=5
-  // Para revisar el stock de UNA empresa específica
-  // ─────────────────────────────────────────────────────────
+  // GET /api/catalogo/stock/bajo/:empresaId
   obtenerStockBajoPorEmpresa: async (req, res) => {
     try {
       const { empresaId } = req.params;
@@ -377,15 +374,10 @@ const catalogoController = {
       const productosBajos = await CatalogoItem.findAll({
         where: {
           empresa_id: empresaId,
-          tipo_item: 'producto',
           disponible: true,
-          stock: {
-            [Op.and]: [
-              { [Op.not]: null },
-              { [Op.lte]: umbral }
-            ]
-          }
+          stock: { [Op.and]: [{ [Op.not]: null }, { [Op.lte]: umbral }] }
         },
+        include: [{ model: CategoriaProducto, as: 'categoria', attributes: ['id', 'nombre'] }],
         order: [['stock', 'ASC']]
       });
 
@@ -399,9 +391,8 @@ const catalogoController = {
           id: p.id,
           nombre: p.nombre_item,
           stock: p.stock,
-          sku: p.sku || null,
           precio: p.precio,
-          categoria: p.categoria
+          categoria: p.categoria?.nombre || null
         }))
       });
 
@@ -411,10 +402,7 @@ const catalogoController = {
     }
   },
 
-  // ─────────────────────────────────────────────────────────
   // PATCH /api/catalogo/:id/stock
-  // Actualizar solo el stock de un producto
-  // ─────────────────────────────────────────────────────────
   actualizarStock: async (req, res) => {
     try {
       const empresaId = req.usuario.empresa_id;
@@ -425,13 +413,9 @@ const catalogoController = {
         return res.status(400).json({ success: false, message: 'Se requiere el campo stock' });
       }
 
-      const item = await CatalogoItem.findOne({
-        where: { id, empresa_id: empresaId, tipo_item: 'producto' }
-      });
+      const item = await CatalogoItem.findOne({ where: { id, empresa_id: empresaId } });
 
-      if (!item) {
-        return res.status(404).json({ success: false, message: 'Producto no encontrado' });
-      }
+      if (!item) return res.status(404).json({ success: false, message: 'Producto no encontrado' });
 
       const stockAnterior = item.stock;
       await item.update({ stock: parseInt(stock), fecha_actualizacion: new Date() });
@@ -439,12 +423,7 @@ const catalogoController = {
       return res.json({
         success: true,
         message: 'Stock actualizado exitosamente',
-        data: {
-          id: item.id,
-          nombre: item.nombre_item,
-          stockAnterior,
-          stockNuevo: parseInt(stock)
-        }
+        data: { id: item.id, nombre: item.nombre_item, stockAnterior, stockNuevo: parseInt(stock) }
       });
 
     } catch (error) {
@@ -452,7 +431,6 @@ const catalogoController = {
       return res.status(500).json({ success: false, message: 'Error al actualizar stock', error: error.message });
     }
   }
-
 };
 
 module.exports = catalogoController;

@@ -52,6 +52,7 @@ class AuthController {
         nombre: nombre_empresa,
         correo_contacto: correo_empresa || null,
         telefono_contacto: telefono_empresa || null
+        // tipo_negocio y onboarding_completado quedan en sus defaults (null y false)
       }, { transaction });
 
       console.log('✅ [REGISTRO] Empresa creada:', nuevaEmpresa.id);
@@ -105,8 +106,18 @@ class AuthController {
         success: true,
         message: 'Empresa y usuario creados. Verifica tu correo.',
         data: {
-          empresa: { id: nuevaEmpresa.id, nombre: nuevaEmpresa.nombre },
-          usuario: { id: nuevoUsuario.id, nombre: nuevoUsuario.nombre, correo: nuevoUsuario.correo },
+          empresa: {
+            id: nuevaEmpresa.id,
+            nombre: nuevaEmpresa.nombre,
+            // ── NUEVO: el frontend usa esto para redirigir al onboarding ──
+            onboarding_completado: false,
+            redirect_onboarding: `/onboarding/${nuevaEmpresa.id}`
+          },
+          usuario: {
+            id: nuevoUsuario.id,
+            nombre: nuevoUsuario.nombre,
+            correo: nuevoUsuario.correo
+          },
           whatsapp: {
             instancia_id: nuevaInstancia.id,
             nombre_sesion: nombreSesion,
@@ -147,6 +158,8 @@ class AuthController {
           {
             model: Empresa,
             as: 'empresa',
+            // ── NUEVO: incluir campos del onboarding ──
+            attributes: ['id', 'nombre', 'tipo_negocio', 'onboarding_completado'],
             include: [
               {
                 model: InstanciaWhatsapp,
@@ -185,11 +198,14 @@ class AuthController {
         });
       }
 
+      // ── NUEVO: tipo_negocio y onboarding_completado en el JWT ──
       const token = jwt.sign(
         {
           id: usuario.id,
           empresa_id: usuario.empresa_id,
-          correo: usuario.correo
+          correo: usuario.correo,
+          tipo_negocio: usuario.empresa.tipo_negocio,
+          onboarding_completado: usuario.empresa.onboarding_completado
         },
         process.env.JWT_SECRET,
         { expiresIn: '7d' }
@@ -208,7 +224,10 @@ class AuthController {
           empresa_id: usuario.empresa_id,
           empresa: {
             id: usuario.empresa.id,
-            nombre: usuario.empresa.nombre
+            nombre: usuario.empresa.nombre,
+            // ── NUEVO ──
+            tipo_negocio: usuario.empresa.tipo_negocio,
+            onboarding_completado: usuario.empresa.onboarding_completado
           },
           whatsapp: usuario.empresa.instancia_whatsapp || null
         }
@@ -224,6 +243,7 @@ class AuthController {
   }
 
   // ========================= VERIFICAR EMAIL =========================
+  // Sin cambios
   async verificarEmail(req, res) {
     console.log('🟢 [VERIFY] Request recibido');
     console.log('🔑 Token:', req.query.token);
