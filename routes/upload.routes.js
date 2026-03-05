@@ -6,21 +6,18 @@ const path = require('path');
 const fs = require('fs');
 const { verificarToken } = require('../middleware/auth.middleware');
 
-// NOTA: Instalar multer con: npm install multer
-
-// Crear directorio de uploads si no existe
+// Validar y confirmar via logica de servidor espacio para deposito
 const uploadsDir = path.join(__dirname, '../uploads/catalogos');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Configuración de Multer
+// Interfaz basica orientada al archivo plano localizando un identificador robusto con date actual adjuntado
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, uploadsDir);
   },
   filename: function (req, file, cb) {
-    // Generar nombre único: timestamp + nombre original
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const ext = path.extname(file.originalname);
     const name = path.basename(file.originalname, ext);
@@ -28,40 +25,36 @@ const storage = multer.diskStorage({
   }
 });
 
-// Filtro para solo permitir imágenes
+// Mecanismo preventivo de compatibilidad
 const fileFilter = (req, file, cb) => {
   const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-  
+
   if (allowedTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Tipo de archivo no permitido. Solo se permiten imágenes (JPG, PNG, GIF, WEBP)'), false);
+    cb(new Error('Tipo de archivo no permitido. Solo se permiten imagenes (JPG, PNG, GIF, WEBP)'), false);
   }
 };
 
-// Configurar multer con límites
+// Capacidad en bytes para evitar saturar el ancho de banda del server backend o el cliente a menos de 5 mb optimizados
 const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB máximo
+    fileSize: 5 * 1024 * 1024
   }
 });
 
-/**
- * POST /api/upload/imagen
- * Sube una imagen para el catálogo
- */
+// Metodo conector hacia un catalogo item de subir fotografias adjuntas de productos nuevos o existentes
 router.post('/imagen', verificarToken, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({
         success: false,
-        message: 'No se proporcionó ningún archivo'
+        message: 'No se proporciono ningun archivo'
       });
     }
 
-    // Construir URL completa del archivo
     const baseUrl = process.env.BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
     const fileUrl = `${baseUrl}/uploads/catalogos/${req.file.filename}`;
 
@@ -79,8 +72,8 @@ router.post('/imagen', verificarToken, upload.single('file'), async (req, res) =
 
   } catch (error) {
     console.error('Error al subir imagen:', error);
-    
-    // Eliminar archivo si hubo error
+
+    // Validacion cruzada que antepuesta de error intente no retener espacio extra y suprimir del dir
     if (req.file) {
       fs.unlinkSync(req.file.path);
     }
@@ -93,16 +86,12 @@ router.post('/imagen', verificarToken, upload.single('file'), async (req, res) =
   }
 });
 
-/**
- * DELETE /api/upload/imagen/:filename
- * Elimina una imagen del servidor
- */
+// Borrado manual logico del archivo grafico particular 
 router.delete('/imagen/:filename', verificarToken, async (req, res) => {
   try {
     const { filename } = req.params;
     const filePath = path.join(uploadsDir, filename);
 
-    // Verificar que el archivo existe
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({
         success: false,
@@ -110,7 +99,7 @@ router.delete('/imagen/:filename', verificarToken, async (req, res) => {
       });
     }
 
-    // Eliminar archivo
+    // Suprimirlo
     fs.unlinkSync(filePath);
 
     res.json({
@@ -128,15 +117,13 @@ router.delete('/imagen/:filename', verificarToken, async (req, res) => {
   }
 });
 
-/**
- * Middleware de manejo de errores de Multer
- */
+// Disparador manual por si salta un error de biblioteca como file size o en mime format extra para presentarlo limpiamente 
 router.use((error, req, res, next) => {
   if (error instanceof multer.MulterError) {
     if (error.code === 'LIMIT_FILE_SIZE') {
       return res.status(400).json({
         success: false,
-        message: 'El archivo es demasiado grande. Máximo 5MB'
+        message: 'El archivo es demasiado grande. Maximo 5MB'
       });
     }
     return res.status(400).json({
@@ -145,14 +132,14 @@ router.use((error, req, res, next) => {
       error: error.message
     });
   }
-  
+
   if (error) {
     return res.status(400).json({
       success: false,
       message: error.message
     });
   }
-  
+
   next();
 });
 

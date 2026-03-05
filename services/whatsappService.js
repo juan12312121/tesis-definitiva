@@ -1,15 +1,15 @@
 const makeWASocket = require('@whiskeysockets/baileys').default;
-const { 
-  useMultiFileAuthState, 
-  DisconnectReason, 
-  fetchLatestBaileysVersion, 
+const {
+  useMultiFileAuthState,
+  DisconnectReason,
+  fetchLatestBaileysVersion,
   Browsers
   // NO importar makeInMemoryStore - no existe en v7
 } = require('@whiskeysockets/baileys');
 const QRCode = require('qrcode');
 const path = require('path');
 const fs = require('fs').promises;
-const fsSync = require('fs'); // ← AGREGADO para operaciones síncronas
+const fsSync = require('fs'); // para operaciones sincronas
 
 class WhatsAppService {
   constructor() {
@@ -20,123 +20,105 @@ class WhatsAppService {
     this.contactCache = new Map();
     this.jidCache = new Map();
     this.stores = new Map();
-    this.storeIntervals = new Map(); // ← AGREGADO
+    this.storeIntervals = new Map();
   }
 
   // ========================================
-  // MÉTODO AUXILIAR: OBTENER NÚMERO REAL
+  // METODO AUXILIAR: OBTENER NUMERO REAL
   // ========================================
-async obtenerNumeroReal(sock, msg, sessionKey) {
-  const remoteJid = msg.key.remoteJid;
-  const pushName = msg.pushName || 'Desconocido';
+  async obtenerNumeroReal(sock, msg, sessionKey) {
+    const remoteJid = msg.key.remoteJid;
+    const pushName = msg.pushName || 'Desconocido';
 
-  console.log(`\n🔍 OBTENIENDO NÚMERO REAL...`);
-  console.log(`   RemoteJid: ${remoteJid}`);
-  console.log(`   PushName: ${pushName}`);
+    console.log(`\n[WHATSAPP] OBTENIENDO NUMERO REAL...`);
+    console.log(`   RemoteJid: ${remoteJid}`);
+    console.log(`   PushName: ${pushName}`);
 
-  let numeroReal = null;
-  let numeroDescifrado = false;
+    let numeroReal = null;
+    let numeroDescifrado = false;
 
-  // CASO 1: JID NORMAL (@s.whatsapp.net)
-  if (remoteJid.endsWith('@s.whatsapp.net')) {
-    numeroReal = remoteJid.replace(/@s\.whatsapp\.net$/, '');
-    numeroDescifrado = true;
-    console.log(`   ✅ JID estándar - Número real: ${numeroReal}`);
-    return {
-      numeroReal,
-      nombreContacto: pushName,
-      jidOriginal: remoteJid,
-      numeroDescifrado
-    };
-  }
-
-  // CASO 2: JID CIFRADO (@lid)
-  if (remoteJid.includes('@lid')) {
-    console.log(`   🔐 JID CIFRADO (@lid) detectado`);
-    
-    const numeroCifrado = remoteJid.split('@')[0];
-
-    // 🔥 NUEVO MÉTODO 1: Intentar obtener el número del perfil del usuario
-    try {
-      console.log(`   🔍 Intentando obtener perfil del usuario...`);
-      
-      // Esperar un poco para asegurar que el contacto esté sincronizado
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Verificar si existe en onWhatsApp (a veces devuelve el número real en user)
-      const result = await sock.onWhatsApp(remoteJid);
-      
-      if (result && result.length > 0) {
-        console.log(`   📋 Resultado onWhatsApp:`, result[0]);
-        
-        // Algunos casos el número real viene en result[0].jid
-        if (result[0].jid && !result[0].jid.includes('@lid')) {
-          numeroReal = result[0].jid.replace(/@.*$/, '');
-          numeroDescifrado = true;
-          console.log(`   ✅ Número real encontrado en onWhatsApp: ${numeroReal}`);
-          
-          this.jidCache.set(`${sessionKey}_${numeroReal}`, remoteJid);
-          
-          return {
-            numeroReal,
-            nombreContacto: pushName,
-            jidOriginal: remoteJid,
-            numeroDescifrado
-          };
-        }
-        
-        // Intentar con el user si existe
-        if (result[0].user && !result[0].user.includes('@lid')) {
-          numeroReal = result[0].user;
-          numeroDescifrado = true;
-          console.log(`   ✅ Número real encontrado en user: ${numeroReal}`);
-          
-          this.jidCache.set(`${sessionKey}_${numeroReal}`, remoteJid);
-          
-          return {
-            numeroReal,
-            nombreContacto: pushName,
-            jidOriginal: remoteJid,
-            numeroDescifrado
-          };
-        }
-      }
-    } catch (error) {
-      console.log(`   ⚠️ Error en onWhatsApp:`, error.message);
+    // CASO 1: JID NORMAL (@s.whatsapp.net)
+    if (remoteJid.endsWith('@s.whatsapp.net')) {
+      numeroReal = remoteJid.replace(/@s\.whatsapp\.net$/, '');
+      numeroDescifrado = true;
+      console.log(`   [WHATSAPP] JID estandar - Numero real: ${numeroReal}`);
+      return {
+        numeroReal,
+        nombreContacto: pushName,
+        jidOriginal: remoteJid,
+        numeroDescifrado
+      };
     }
 
-    // 🔥 NUEVO MÉTODO 2: Consultar el store de contactos (más completo)
-    try {
-      if (sock.store?.contacts?.[remoteJid]) {
-        const contacto = sock.store.contacts[remoteJid];
-        console.log(`   📇 Contacto en store:`, contacto);
-        
-        // Buscar número en diferentes propiedades del contacto
-        if (contacto.number) {
-          numeroReal = contacto.number;
-          numeroDescifrado = true;
-          console.log(`   ✅ Número encontrado en contacto.number: ${numeroReal}`);
-          
-          this.jidCache.set(`${sessionKey}_${numeroReal}`, remoteJid);
-          
-          return {
-            numeroReal,
-            nombreContacto: contacto.notify || contacto.name || pushName,
-            jidOriginal: remoteJid,
-            numeroDescifrado
-          };
-        }
-        
-        // Intentar extraer del vcard si existe
-        if (contacto.vcard) {
-          const vcardMatch = contacto.vcard.match(/TEL[^:]*:([+\d]+)/);
-          if (vcardMatch && vcardMatch[1]) {
-            numeroReal = vcardMatch[1].replace(/\D/g, '');
+    // CASO 2: JID CIFRADO (@lid)
+    if (remoteJid.includes('@lid')) {
+      console.log(`   [WHATSAPP] JID CIFRADO (@lid) detectado`);
+
+      const numeroCifrado = remoteJid.split('@')[0];
+
+      // METODO 1: Intentar obtener el numero del perfil del usuario
+      try {
+        console.log(`   [WHATSAPP] Intentando obtener perfil del usuario...`);
+
+        // Esperar un poco para asegurar que el contacto este sincronizado
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Verificar si existe en onWhatsApp (a veces devuelve el numero real en user)
+        const result = await sock.onWhatsApp(remoteJid);
+
+        if (result && result.length > 0) {
+          console.log(`   [WHATSAPP] Resultado onWhatsApp:`, result[0]);
+
+          // Algunos casos el numero real viene en result[0].jid
+          if (result[0].jid && !result[0].jid.includes('@lid')) {
+            numeroReal = result[0].jid.replace(/@.*$/, '');
             numeroDescifrado = true;
-            console.log(`   ✅ Número extraído de vCard: ${numeroReal}`);
-            
+            console.log(`   [WHATSAPP] Numero real encontrado en onWhatsApp: ${numeroReal}`);
+
             this.jidCache.set(`${sessionKey}_${numeroReal}`, remoteJid);
-            
+
+            return {
+              numeroReal,
+              nombreContacto: pushName,
+              jidOriginal: remoteJid,
+              numeroDescifrado
+            };
+          }
+
+          // Intentar con el user si existe
+          if (result[0].user && !result[0].user.includes('@lid')) {
+            numeroReal = result[0].user;
+            numeroDescifrado = true;
+            console.log(`   [WHATSAPP] Numero real encontrado en user: ${numeroReal}`);
+
+            this.jidCache.set(`${sessionKey}_${numeroReal}`, remoteJid);
+
+            return {
+              numeroReal,
+              nombreContacto: pushName,
+              jidOriginal: remoteJid,
+              numeroDescifrado
+            };
+          }
+        }
+      } catch (error) {
+        console.log(`   [WHATSAPP] Error en onWhatsApp:`, error.message);
+      }
+
+      // METODO 2: Consultar el store de contactos (mas completo)
+      try {
+        if (sock.store?.contacts?.[remoteJid]) {
+          const contacto = sock.store.contacts[remoteJid];
+          console.log(`   [WHATSAPP] Contacto en store:`, contacto);
+
+          // Buscar numero en diferentes propiedades del contacto
+          if (contacto.number) {
+            numeroReal = contacto.number;
+            numeroDescifrado = true;
+            console.log(`   [WHATSAPP] Numero encontrado en contacto.number: ${numeroReal}`);
+
+            this.jidCache.set(`${sessionKey}_${numeroReal}`, remoteJid);
+
             return {
               numeroReal,
               nombreContacto: contacto.notify || contacto.name || pushName,
@@ -144,76 +126,95 @@ async obtenerNumeroReal(sock, msg, sessionKey) {
               numeroDescifrado
             };
           }
-        }
-      }
-    } catch (error) {
-      console.log(`   ⚠️ Error consultando store:`, error.message);
-    }
 
-    // 🔥 MÉTODO 3: Intentar múltiples formatos con onWhatsApp
-    const formatos = [
-      numeroCifrado,
-      numeroCifrado.replace(/^52/, ''),
-      `521${numeroCifrado.slice(2)}`,
-      `52${numeroCifrado}`,
-    ];
+          // Intentar extraer del vcard si existe
+          if (contacto.vcard) {
+            const vcardMatch = contacto.vcard.match(/TEL[^:]*:([+\d]+)/);
+            if (vcardMatch && vcardMatch[1]) {
+              numeroReal = vcardMatch[1].replace(/\D/g, '');
+              numeroDescifrado = true;
+              console.log(`   [WHATSAPP] Numero extraido de vCard: ${numeroReal}`);
 
-    for (const formato of formatos) {
-      try {
-        console.log(`   🧪 Probando formato: "${formato}"`);
-        const [result] = await sock.onWhatsApp(formato);
-        
-        if (result?.exists && result?.jid && !result.jid.includes('@lid')) {
-          numeroReal = result.jid.replace(/@.*$/, '');
-          numeroDescifrado = true;
-          console.log(`   ✅ DESCIFRADO con formato: "${formato}" → ${numeroReal}`);
-          
-          this.jidCache.set(`${sessionKey}_${numeroReal}`, remoteJid);
-          
-          return {
-            numeroReal,
-            nombreContacto: pushName,
-            jidOriginal: remoteJid,
-            numeroDescifrado
-          };
+              this.jidCache.set(`${sessionKey}_${numeroReal}`, remoteJid);
+
+              return {
+                numeroReal,
+                nombreContacto: contacto.notify || contacto.name || pushName,
+                jidOriginal: remoteJid,
+                numeroDescifrado
+              };
+            }
+          }
         }
       } catch (error) {
-        console.log(`      ❌ Error con formato "${formato}": ${error.message}`);
+        console.log(`   [WHATSAPP] Error consultando store:`, error.message);
       }
+
+      // METODO 3: Intentar multiples formatos con onWhatsApp
+      const formatos = [
+        numeroCifrado,
+        numeroCifrado.replace(/^52/, ''),
+        `521${numeroCifrado.slice(2)}`,
+        `52${numeroCifrado}`,
+      ];
+
+      for (const formato of formatos) {
+        try {
+          console.log(`   [WHATSAPP] Probando formato: "${formato}"`);
+          const [result] = await sock.onWhatsApp(formato);
+
+          if (result?.exists && result?.jid && !result.jid.includes('@lid')) {
+            numeroReal = result.jid.replace(/@.*$/, '');
+            numeroDescifrado = true;
+            console.log(`   [WHATSAPP] DESCIFRADO con formato: "${formato}" -> ${numeroReal}`);
+
+            this.jidCache.set(`${sessionKey}_${numeroReal}`, remoteJid);
+
+            return {
+              numeroReal,
+              nombreContacto: pushName,
+              jidOriginal: remoteJid,
+              numeroDescifrado
+            };
+          }
+        } catch (error) {
+          console.log(`      [WHATSAPP] Error con formato "${formato}": ${error.message}`);
+        }
+      }
+
+      // FALLBACK: No se pudo descifrar
+      console.log(`\n   [WHATSAPP] NO SE PUDO DESCIFRAR - Usando JID cifrado con pushName`);
+      numeroReal = numeroCifrado;
+      numeroDescifrado = false;
+
+      return {
+        numeroReal,
+        nombreContacto: pushName,
+        jidOriginal: remoteJid,
+        numeroDescifrado
+      };
     }
 
-    // FALLBACK: No se pudo descifrar
-    console.log(`\n   ❌ NO SE PUDO DESCIFRAR - Usando JID cifrado con pushName`);
-    numeroReal = numeroCifrado;
-    numeroDescifrado = false;
-    
+    // CASO 3: OTROS FORMATOS
+    numeroReal = remoteJid.replace(/@.*$/, '');
     return {
       numeroReal,
       nombreContacto: pushName,
       jidOriginal: remoteJid,
-      numeroDescifrado
+      numeroDescifrado: false
     };
   }
 
-  // CASO 3: OTROS FORMATOS
-  numeroReal = remoteJid.replace(/@.*$/, '');
-  return {
-    numeroReal,
-    nombreContacto: pushName,
-    jidOriginal: remoteJid,
-    numeroDescifrado: false
-  };
-}
-
+  // Despliegue de conector basico local hacia servidores de chat interactivo 
   async iniciarSesion(empresaId, nombreSesion, forzarNuevaConexion = false) {
     const sessionKey = `${empresaId}_${nombreSesion}`;
 
     console.log(`\n${'='.repeat(70)}`);
-    console.log(`🔄 INICIANDO SESIÓN`);
+    console.log(`[WHATSAPP] INICIANDO SESION`);
     console.log(`   SessionKey: ${sessionKey}`);
     console.log(`   EmpresaId: ${empresaId}`);
     console.log(`   NombreSesion: ${nombreSesion}`);
-    console.log(`   Forzar nueva conexión: ${forzarNuevaConexion}`);
+    console.log(`   Forzar nueva conexion: ${forzarNuevaConexion}`);
     console.log(`   Timestamp: ${new Date().toLocaleString()}`);
     console.log(`${'='.repeat(70)}`);
 
@@ -228,7 +229,7 @@ async obtenerNumeroReal(sock, msg, sessionKey) {
       });
 
       if (!instancia) {
-        console.log(`📝 Instancia no existe en BD, creándola...`);
+        console.log(`[WHATSAPP] Instancia no existe en BD, creandola...`);
         instancia = await InstanciaWhatsapp.create({
           empresa_id: empresaId,
           nombre_sesion: nombreSesion,
@@ -236,25 +237,26 @@ async obtenerNumeroReal(sock, msg, sessionKey) {
           codigo_qr: null,
           numero_telefono: null
         });
-        console.log(`✅ Instancia creada en BD con ID: ${instancia.id}`);
+        console.log(`[WHATSAPP] Instancia creada en BD con ID: ${instancia.id}`);
       } else {
-        console.log(`✅ Instancia encontrada en BD con ID: ${instancia.id}`);
+        console.log(`[WHATSAPP] Instancia encontrada en BD con ID: ${instancia.id}`);
       }
     } catch (error) {
-      console.error(`❌ Error verificando/creando instancia en BD:`, error);
+      console.error(`[WHATSAPP] Error verificando/creando instancia en BD:`, error);
       return {
         success: false,
         message: `Error en BD: ${error.message}`
       };
     }
 
+    // Proteger sesion en ejecucion para no suplantar
     if (!forzarNuevaConexion && this.sessions.has(sessionKey)) {
       const sock = this.sessions.get(sessionKey);
       if (sock && sock.user) {
-        console.log(`✅ Sesión ${sessionKey} ya está activa`);
+        console.log(`[WHATSAPP] Sesion ${sessionKey} ya esta activa`);
         return {
           success: true,
-          message: 'Sesión ya activa',
+          message: 'Sesion ya activa',
           conectado: true,
           numero: sock.user.id,
           nombre: sock.user.name
@@ -266,28 +268,29 @@ async obtenerNumeroReal(sock, msg, sessionKey) {
 
     try {
       await fs.mkdir(sessionPath, { recursive: true });
-      console.log(`📁 Carpeta de sesión creada: ${sessionPath}`);
+      console.log(`[WHATSAPP] Carpeta de sesion creada: ${sessionPath}`);
     } catch (error) {
-      console.error('❌ Error creando carpeta de sesión:', error);
+      console.error('[WHATSAPP] Error creando carpeta de sesion:', error);
     }
 
     const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
     const { version } = await fetchLatestBaileysVersion();
 
-    // 🔥🔥🔥 CREAR STORE MANUAL (Compatible con Baileys 7.x) 🔥🔥🔥
-    console.log(`\n💾 Creando store para sincronización de contactos...`);
-    
+    // CREAR STORE MANUAL (Compatible con Baileys 7.x)
+    console.log(`\n[WHATSAPP] Creando store para sincronizacion de contactos...`);
+
+    // Objeto store configurado para retener en cache el contexto de mensajeria
     const store = {
       contacts: {},
       chats: {},
       messages: {},
-      
-      bind: function(ev) {
-        console.log(`🔗 Vinculando eventos al store...`);
-        
-        // Escuchar actualización de contactos
+
+      bind: function (ev) {
+        console.log(`[WHATSAPP] Vinculando eventos al store...`);
+
+        // Escuchar actualizacion de contactos
         ev.on('contacts.update', (contacts) => {
-          console.log(`📇 Actualizando ${contacts.length} contacto(s)...`);
+          console.log(`[WHATSAPP] Actualizando ${contacts.length} contacto(s)...`);
           for (const contact of contacts) {
             this.contacts[contact.id] = {
               id: contact.id,
@@ -295,20 +298,20 @@ async obtenerNumeroReal(sock, msg, sessionKey) {
               notify: contact.notify,
               verifiedName: contact.verifiedName
             };
-            console.log(`   ✅ Contacto: ${contact.id} → ${contact.name || contact.notify}`);
+            console.log(`   [WHATSAPP] Contacto: ${contact.id} -> ${contact.name || contact.notify}`);
           }
         });
-        
-        // Escuchar actualización de chats
+
+        // Escuchar actualizacion de chats
         ev.on('chats.update', (chats) => {
           for (const chat of chats) {
             this.chats[chat.id] = chat;
           }
         });
-        
+
         // Escuchar contactos en SET (batch)
         ev.on('contacts.set', ({ contacts }) => {
-          console.log(`📇 SET de ${contacts.length} contacto(s)...`);
+          console.log(`[WHATSAPP] SET de ${contacts.length} contacto(s)...`);
           for (const contact of contacts) {
             this.contacts[contact.id] = {
               id: contact.id,
@@ -317,28 +320,28 @@ async obtenerNumeroReal(sock, msg, sessionKey) {
               verifiedName: contact.verifiedName
             };
           }
-          console.log(`   ✅ Total contactos en store: ${Object.keys(this.contacts).length}`);
+          console.log(`   [WHATSAPP] Total contactos en store: ${Object.keys(this.contacts).length}`);
         });
-        
-        console.log(`✅ Eventos vinculados correctamente`);
+
+        console.log(`[WHATSAPP] Eventos vinculados correctamente`);
       },
-      
-      readFromFile: function(filePath) {
+
+      readFromFile: function (filePath) {
         try {
           if (fsSync.existsSync(filePath)) {
             const data = JSON.parse(fsSync.readFileSync(filePath, 'utf8'));
             this.contacts = data.contacts || {};
             this.chats = data.chats || {};
-            console.log(`✅ Store cargado: ${Object.keys(this.contacts).length} contactos`);
+            console.log(`[WHATSAPP] Store cargado: ${Object.keys(this.contacts).length} contactos`);
             return true;
           }
         } catch (error) {
-          console.log(`ℹ️  Store nuevo (sin archivo previo)`);
+          console.log(`[WHATSAPP] Store nuevo (sin archivo previo)`);
         }
         return false;
       },
-      
-      writeToFile: function(filePath) {
+
+      writeToFile: function (filePath) {
         try {
           const data = {
             contacts: this.contacts,
@@ -347,7 +350,7 @@ async obtenerNumeroReal(sock, msg, sessionKey) {
           };
           fsSync.writeFileSync(filePath, JSON.stringify(data, null, 2));
         } catch (error) {
-          console.error(`⚠️  Error guardando store: ${error.message}`);
+          console.error(`[WHATSAPP] Error guardando store: ${error.message}`);
         }
       }
     };
@@ -358,7 +361,7 @@ async obtenerNumeroReal(sock, msg, sessionKey) {
     const storeFilePath = path.join(sessionPath, 'store.json');
     store.readFromFile(storeFilePath);
 
-    // Auto-guardar cada 30 segundos
+    // Auto-guardar frecuentemente
     const saveInterval = setInterval(() => {
       const currentStore = this.stores.get(sessionKey);
       if (currentStore) {
@@ -368,7 +371,7 @@ async obtenerNumeroReal(sock, msg, sessionKey) {
 
     this.storeIntervals.set(sessionKey, saveInterval);
 
-    console.log(`✅ Store manual creado para: ${sessionKey}`);
+    console.log(`[WHATSAPP] Store manual creado para: ${sessionKey}`);
 
     const getMessage = async (key) => {
       const storeKey = `${key.remoteJid}_${key.id}`;
@@ -381,32 +384,32 @@ async obtenerNumeroReal(sock, msg, sessionKey) {
       auth: state,
       printQRInTerminal: false,
       browser: Browsers.macOS('Desktop'),
-      syncFullHistory: true,  // ← MANTENER EN TRUE
+      syncFullHistory: true,
       markOnlineOnConnect: true,
       getMessage: getMessage,
       defaultQueryTimeoutMs: undefined,
       keepAliveIntervalMs: 30000,
     });
 
-    // 🔥🔥🔥 CONECTAR EL STORE AL SOCKET 🔥🔥🔥
-    console.log(`🔗 Conectando store al socket...`);
+    // CONECTAR EL STORE AL SOCKET
+    console.log(`[WHATSAPP] Conectando store al socket...`);
     store.bind(sock.ev);
-    
-    // 🔥🔥🔥 AGREGAR EL STORE AL SOCKET 🔥🔥🔥
+
+    // AGREGAR EL STORE AL SOCKET
     sock.store = store;
-    console.log(`✅ Store vinculado exitosamente`);
+    console.log(`[WHATSAPP] Store vinculado exitosamente`);
 
     this.sessions.set(sessionKey, sock);
     this.sessionStartTimes.set(sessionKey, new Date());
 
-    console.log(`💾 Sesión guardada en memoria: ${sessionKey}`);
+    console.log(`[WHATSAPP] Sesion guardada en memoria: ${sessionKey}`);
 
     // ========================================
     // EVENT HANDLER: messages.upsert
     // ======================================== 
     sock.ev.on('messages.upsert', async ({ type, messages }) => {
       console.log('\n' + '='.repeat(60));
-      console.log(`🔔 EVENTO messages.upsert DISPARADO`);
+      console.log(`[WHATSAPP] EVENTO messages.upsert DISPARADO`);
       console.log(`   Session: ${sessionKey}`);
       console.log(`   EmpresaId: ${empresaId}`);
       console.log(`   Tipo: ${type}`);
@@ -414,7 +417,7 @@ async obtenerNumeroReal(sock, msg, sessionKey) {
       console.log('='.repeat(60));
 
       if (type !== 'notify') {
-        console.log(`   ⏭️ Tipo "${type}" ignorado (no es "notify")`);
+        console.log(`   [WHATSAPP] Tipo "${type}" ignorado (no es "notify")`);
         return;
       }
 
@@ -428,54 +431,55 @@ async obtenerNumeroReal(sock, msg, sessionKey) {
           const messageTimestamp = msg.messageTimestamp;
           const messageId = msg.key.id;
 
-          console.log(`\n📩 MENSAJE DETECTADO:`);
+          console.log(`\n[WHATSAPP] MENSAJE DETECTADO:`);
           console.log(`   Session: ${sessionKey}`);
-          console.log(`   Usuario de esta sesión: ${sock.user?.id}`);
+          console.log(`   Usuario de esta sesion: ${sock.user?.id}`);
           console.log(`   From: ${remoteJid}`);
           console.log(`   FromMe (flag): ${fromMe}`);
           console.log(`   ID: ${messageId}`);
           console.log(`   Timestamp: ${messageTimestamp}`);
           console.log(`   PushName: ${msg.pushName || 'N/A'}`);
 
-          // ❌ IGNORAR MENSAJES PROPIOS
+          // IGNORAR MENSAJES PROPIOS
           if (fromMe) {
-            console.log(`   ⏭️ IGNORADO (mensaje propio)`);
+            console.log(`   [WHATSAPP] IGNORADO (mensaje propio)`);
             continue;
           }
 
-          // ❌ IGNORAR GRUPOS (@g.us)
+          // IGNORAR GRUPOS (@g.us)
           if (remoteJid.includes('@g.us')) {
-            console.log(`   ⏭️ IGNORADO (mensaje de GRUPO)`);
+            console.log(`   [WHATSAPP] IGNORADO (mensaje de GRUPO)`);
             continue;
           }
 
-          // ❌ IGNORAR ESTADOS Y NEWSLETTERS
+          // IGNORAR ESTADOS Y NEWSLETTERS
           if (remoteJid === 'status@broadcast') {
-            console.log(`   ⏭️ Ignorado (estado de WhatsApp)`);
+            console.log(`   [WHATSAPP] Ignorado (estado de WhatsApp)`);
             continue;
           }
 
           if (remoteJid && remoteJid.includes('@newsletter')) {
-            console.log(`   ⏭️ Ignorado (newsletter)`);
+            console.log(`   [WHATSAPP] Ignorado (newsletter)`);
             continue;
           }
 
           const sessionStartTime = this.sessionStartTimes.get(sessionKey);
           const messageDate = new Date(messageTimestamp * 1000);
 
-          console.log(`   📅 Fecha mensaje: ${messageDate.toLocaleString()}`);
-          console.log(`   📅 Fecha inicio: ${sessionStartTime.toLocaleString()}`);
+          console.log(`   [WHATSAPP] Fecha mensaje: ${messageDate.toLocaleString()}`);
+          console.log(`   [WHATSAPP] Fecha inicio: ${sessionStartTime.toLocaleString()}`);
 
           if (messageDate < sessionStartTime) {
-            console.log(`   ⏭️ Ignorado (mensaje antiguo)`);
+            console.log(`   [WHATSAPP] Ignorado (mensaje antiguo)`);
             continue;
           }
 
           if (!msg.message) {
-            console.log(`   ⏭️ Ignorado (sin contenido de mensaje)`);
+            console.log(`   [WHATSAPP] Ignorado (sin contenido de mensaje)`);
             continue;
           }
 
+          // Procesamiento del tipo de formato admitido
           let messageText = '';
           if (msg.message?.conversation) {
             messageText = msg.message.conversation;
@@ -499,12 +503,12 @@ async obtenerNumeroReal(sock, msg, sessionKey) {
             messageText = '[Mensaje multimedia]';
           }
 
-          console.log(`   💬 Texto: "${messageText}"`);
+          console.log(`   [WHATSAPP] Texto: "${messageText}"`);
 
-          // OBTENER NÚMERO REAL Y NOMBRE (PUSHNAME)
+          // OBTENER NUMERO REAL Y NOMBRE (PUSHNAME)
           const infoContacto = await this.obtenerNumeroReal(sock, msg, sessionKey);
 
-          // Guardar en cache con el pushName
+          // Guardar temporalmente informacion identificatoria
           const cacheKey = `${sessionKey}_${infoContacto.jidOriginal}`;
           this.contactCache.set(cacheKey, {
             numero: infoContacto.numeroReal,
@@ -514,16 +518,16 @@ async obtenerNumeroReal(sock, msg, sessionKey) {
             timestamp: Date.now()
           });
 
-          // Cache inverso (número → JID)
+          // Cache inverso (numero -> JID)
           const jidCacheKey = `${sessionKey}_${infoContacto.numeroReal}`;
           this.jidCache.set(jidCacheKey, infoContacto.jidOriginal);
 
-          console.log(`💾 Guardado en cache:`);
-          console.log(`   Número: ${infoContacto.numeroReal}`);
+          console.log(`[WHATSAPP] Guardado en cache:`);
+          console.log(`   Numero: ${infoContacto.numeroReal}`);
           console.log(`   Nombre: ${infoContacto.nombreContacto}`);
           console.log(`   JID: ${infoContacto.jidOriginal}`);
 
-          console.log(`\n🚀 ENVIANDO A N8N...`);
+          console.log(`\n[WHATSAPP] ENVIANDO A N8N...`);
           await this.enviarAWebhook({
             empresaId,
             nombreSesion,
@@ -538,7 +542,7 @@ async obtenerNumeroReal(sock, msg, sessionKey) {
           });
 
         } catch (error) {
-          console.error(`❌ Error procesando mensaje:`, error);
+          console.error(`[WHATSAPP] Error procesando mensaje:`, error);
         }
       }
     });
@@ -550,17 +554,18 @@ async obtenerNumeroReal(sock, msg, sessionKey) {
 
       if (qr) {
         console.log(`\n${'*'.repeat(70)}`);
-        console.log(`📱 QR GENERADO`);
+        console.log(`[WHATSAPP] QR GENERADO`);
         console.log(`   SessionKey: ${sessionKey}`);
         console.log(`   Timestamp: ${new Date().toLocaleString()}`);
         console.log(`${'*'.repeat(70)}`);
 
+        // Convertir para que el dashboard consuma visualmente de panel base 64
         const qrDataUrl = await QRCode.toDataURL(qr);
         this.qrCodes.set(sessionKey, qrDataUrl);
         sock.qr = qrDataUrl;
-        console.log(`✅ QR almacenado en memoria (${qrDataUrl.length} caracteres)`);
+        console.log(`[WHATSAPP] QR almacenado en memoria (${qrDataUrl.length} caracteres)`);
 
-        console.log(`\n💾 Guardando QR en base de datos...`);
+        console.log(`\n[WHATSAPP] Guardando QR en base de datos...`);
         try {
           const { InstanciaWhatsapp } = require('../models');
           console.log(`   Actualizando InstanciaWhatsapp para empresa_id=${empresaId}, nombre_sesion=${nombreSesion}`);
@@ -577,18 +582,18 @@ async obtenerNumeroReal(sock, msg, sessionKey) {
             }
           );
 
-          console.log(`   Operación: ${created ? 'CREATED' : 'UPDATED'}`);
-          console.log(`💾 ✅ QR guardado exitosamente en BD`);
+          console.log(`   Operacion: ${created ? 'CREATED' : 'UPDATED'}`);
+          console.log(`[WHATSAPP] QR guardado exitosamente en BD`);
           console.log(`   Empresa: ${empresaId}`);
           console.log(`   Longitud QR: ${qrDataUrl.length} caracteres`);
 
           const verificacion = await InstanciaWhatsapp.findOne({
             where: { empresa_id: empresaId, nombre_sesion: nombreSesion }
           });
-          console.log(`   Verificación - QR en BD: ${verificacion?.codigo_qr ? 'PRESENTE' : 'AUSENTE'}`);
+          console.log(`   Verificacion - QR en BD: ${verificacion?.codigo_qr ? 'PRESENTE' : 'AUSENTE'}`);
 
         } catch (dbError) {
-          console.error(`❌ Error guardando QR en BD:`);
+          console.error(`[WHATSAPP] Error guardando QR en BD:`);
           console.error(`   Error: ${dbError.message}`);
           console.error(`   Stack: ${dbError.stack}`);
         }
@@ -600,9 +605,9 @@ async obtenerNumeroReal(sock, msg, sessionKey) {
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         const isLoggedOut = statusCode === DisconnectReason.loggedOut;
 
-        console.log(`\n❌ CONEXIÓN CERRADA`);
+        console.log(`\n[WHATSAPP] CONEXION CERRADA`);
         console.log(`   Status Code: ${statusCode}`);
-        console.log(`   Razón: ${isLoggedOut ? 'Logout manual' : 'Desconexión inesperada'}`);
+        console.log(`   Razon: ${isLoggedOut ? 'Logout manual' : 'Desconexion inesperada'}`);
         console.log(`   ¿Reintentar?: ${shouldReconnect}`);
 
         // Limpiar interval de auto-guardado
@@ -619,46 +624,47 @@ async obtenerNumeroReal(sock, msg, sessionKey) {
             conectado: false,
             numero_telefono: null
           });
-          console.log(`💾 Estado de desconexión guardado en BD`);
+          console.log(`[WHATSAPP] Estado de desconexion guardado en BD`);
         } catch (dbError) {
-          console.error(`⚠️ Error actualizando BD:`, dbError.message);
+          console.error(`[WHATSAPP] Error actualizando BD:`, dbError.message);
         }
 
         if (shouldReconnect) {
-          console.log(`\n🔄 RECONEXIÓN AUTOMÁTICA ACTIVADA`);
-          console.log(`   📱 Se generará un nuevo QR en 5 segundos...`);
+          console.log(`\n[WHATSAPP] RECONEXION AUTOMATICA ACTIVADA`);
+          console.log(`   [WHATSAPP] Se generara un nuevo QR en 5 segundos...`);
 
           setTimeout(async () => {
             console.log(`\n${'='.repeat(70)}`);
-            console.log(`⚡ EJECUTANDO RECONEXIÓN AUTOMÁTICA`);
+            console.log(`[WHATSAPP] EJECUTANDO RECONEXION AUTOMATICA`);
             console.log(`   SessionKey: ${sessionKey}`);
             console.log(`${'='.repeat(70)}`);
 
-            console.log(`🧹 Limpiando sesión anterior de memoria...`);
+            console.log(`[WHATSAPP] Limpiando sesion anterior de memoria...`);
             this.sessions.delete(sessionKey);
             this.sessionStartTimes.delete(sessionKey);
             this.qrCodes.delete(sessionKey);
             this.stores.delete(sessionKey);
-            console.log(`   ✅ Memoria limpiada`);
+            console.log(`   [WHATSAPP] Memoria limpiada`);
 
             try {
-              console.log(`\n📱 Llamando a iniciarSesion() con forzarNuevaConexion=true...`);
+              console.log(`\n[WHATSAPP] Llamando a iniciarSesion() con forzarNuevaConexion=true...`);
               const resultado = await this.iniciarSesion(empresaId, nombreSesion, true);
-              console.log(`✅ iniciarSesion() completado`);
+              console.log(`[WHATSAPP] iniciarSesion() completado`);
               console.log(`   Resultado:`, resultado);
             } catch (error) {
-              console.error(`\n❌ ERROR EN RECONEXIÓN AUTOMÁTICA`);
+              console.error(`\n[WHATSAPP] ERROR EN RECONEXION AUTOMATICA`);
               console.error(`   Error: ${error.message}`);
             }
           }, 5000);
         } else {
-          console.log(`🔒 Sesión desconectada (logout manual)`);
-          console.log(`🗑️ Limpiando sesión completamente...`);
+          console.log(`[WHATSAPP] Sesion desconectada (logout manual)`);
+          console.log(`[WHATSAPP] Limpiando sesion completamente...`);
           this.sessions.delete(sessionKey);
           this.sessionStartTimes.delete(sessionKey);
           this.qrCodes.delete(sessionKey);
           this.stores.delete(sessionKey);
 
+          // Actualizar registros dependientes para asegurar desenganche
           try {
             const { InstanciaWhatsapp } = require('../models');
             await InstanciaWhatsapp.update(
@@ -674,24 +680,24 @@ async obtenerNumeroReal(sock, msg, sessionKey) {
                 }
               }
             );
-            console.log(`💾 BD limpiada - sesión eliminada completamente`);
+            console.log(`[WHATSAPP] BD limpiada - sesion eliminada completamente`);
           } catch (dbError) {
-            console.error(`⚠️ Error actualizando BD:`, dbError.message);
+            console.error(`[WHATSAPP] Error actualizando BD:`, dbError.message);
           }
 
           try {
             const sessionPath = path.join(__dirname, '../whatsapp-sessions', `session_${sessionKey}`);
             await fs.rm(sessionPath, { recursive: true, force: true });
-            console.log(`🗑️ Archivos de sesión eliminados del disco`);
+            console.log(`[WHATSAPP] Archivos de sesion eliminados del disco`);
           } catch (error) {
-            console.error(`⚠️ Error eliminando archivos:`, error.message);
+            console.error(`[WHATSAPP] Error eliminando archivos:`, error.message);
           }
         }
       }
 
       if (connection === 'open') {
         console.log(`\n${'='.repeat(60)}`);
-        console.log(`✅ WHATSAPP CONECTADO CORRECTAMENTE`);
+        console.log(`[WHATSAPP] WHATSAPP CONECTADO CORRECTAMENTE`);
         console.log(`   Session: ${sessionKey}`);
         console.log(`   Usuario: ${sock.user?.id}`);
         console.log(`   Nombre: ${sock.user?.name}`);
@@ -711,17 +717,17 @@ async obtenerNumeroReal(sock, msg, sessionKey) {
             codigo_qr: null,
             numero_telefono: sock.user?.id || null
           });
-          console.log(`💾 Estado de conexión guardado en BD para empresa ${empresaId}`);
-          console.log(`📱 Número registrado: ${sock.user?.id}`);
+          console.log(`[WHATSAPP] Estado de conexion guardado en BD para empresa ${empresaId}`);
+          console.log(`[WHATSAPP] Numero registrado: ${sock.user?.id}`);
         } catch (dbError) {
-          console.error(`⚠️ Error actualizando BD:`, dbError.message);
+          console.error(`[WHATSAPP] Error actualizando BD:`, dbError.message);
         }
 
         try {
           await sock.sendPresenceUpdate('unavailable');
-          console.log(`📵 Cliente marcado como "unavailable" - recibirá mensajes en tiempo real`);
+          console.log(`[WHATSAPP] Cliente marcado como "unavailable" - recibira mensajes en tiempo real sin revelar leido`);
         } catch (error) {
-          console.error(`⚠️ Error marcando presencia:`, error.message);
+          console.error(`[WHATSAPP] Error marcando presencia:`, error.message);
         }
       }
     });
@@ -729,10 +735,11 @@ async obtenerNumeroReal(sock, msg, sessionKey) {
     return {
       success: true,
       qr: sock.qr,
-      message: 'Sesión iniciada - esperando conexión'
+      message: 'Sesion iniciada - esperando conexion'
     };
   }
 
+  // Despliegue en red con webhook configurado que se comunica directamente con n8n
   async enviarAWebhook(datos) {
     const webhookUrl = 'http://localhost:5678/webhook/whatsapp-mensaje';
 
@@ -749,457 +756,387 @@ async obtenerNumeroReal(sock, msg, sessionKey) {
       numeroDescifrado: datos.numeroDescifrado
     };
 
-  console.log(`📍 URL: ${webhookUrl}`);
-  console.log(`📦 Payload:`, JSON.stringify(payload, null, 2));
+    console.log(`[WHATSAPP] Llamada webhook URL: ${webhookUrl}`);
+    console.log(`[WHATSAPP] Payload adjunto:`, JSON.stringify(payload, null, 2));
 
-  try {
-    const response = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
+    try {
+      const response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
 
-    if (response.ok) {
-      const data = await response.text();
-      console.log(`✅ N8N respondió correctamente`);
-      console.log(`📥 Respuesta:`, data);
-    } else {
-      console.log(`⚠️ N8N status: ${response.status}`);
-      const errorText = await response.text();
-      console.log(`📥 Error:`, errorText);
+      if (response.ok) {
+        const data = await response.text();
+        console.log(`[WHATSAPP] N8N respondio correctamente`);
+        console.log(`[WHATSAPP] Respuesta n8n:`, data);
+      } else {
+        console.log(`[WHATSAPP] N8N fallo status: ${response.status}`);
+        const errorText = await response.text();
+        console.log(`[WHATSAPP] Error devolucion:`, errorText);
+      }
+    } catch (error) {
+      console.error(`[WHATSAPP] Error enviando a N8N:`, error.message);
     }
-  } catch (error) {
-    console.error(`❌ Error enviando a N8N:`, error.message);
   }
-}
-async verificarEstado(empresaId, nombreSesion) {
-const sessionKey = `${empresaId}_${nombreSesion}`;
-const sock = this.sessions.get(sessionKey);
-if (!sock || !sock.user) {
-  const qr = this.qrCodes.get(sessionKey);
-  if (qr) {
+
+  // Chequeo rapido en memoria del panel de configuracion
+  async verificarEstado(empresaId, nombreSesion) {
+    const sessionKey = `${empresaId}_${nombreSesion}`;
+    const sock = this.sessions.get(sessionKey);
+    if (!sock || !sock.user) {
+      const qr = this.qrCodes.get(sessionKey);
+      if (qr) {
+        return {
+          conectado: false,
+          qr: qr,
+          mensaje: 'Esperando escaneo de QR',
+          existe: true
+        };
+      }
+      return {
+        conectado: false,
+        mensaje: 'Sesion no iniciada',
+        existe: false
+      };
+    }
+
     return {
-      conectado: false,
-      qr: qr,
-      mensaje: 'Esperando escaneo de QR',
+      conectado: true,
+      numero: sock.user.id,
+      nombre: sock.user.name,
       existe: true
     };
   }
-  return {
-    conectado: false,
-    mensaje: 'Sesión no iniciada',
-    existe: false
-  };
-}
 
-return {
-  conectado: true,
-  numero: sock.user.id,
-  nombre: sock.user.name,
-  existe: true
-};
-}
-obtenerQR(empresaId, nombreSesion) {
-const sessionKey = `${empresaId}_${nombreSesion}`;
-const qr = this.qrCodes.get(sessionKey);
-if (qr) {
-  return { success: true, qr };
-}
+  // Intermediacion simple
+  obtenerQR(empresaId, nombreSesion) {
+    const sessionKey = `${empresaId}_${nombreSesion}`;
+    const qr = this.qrCodes.get(sessionKey);
+    if (qr) {
+      return { success: true, qr };
+    }
 
-return {
-  success: false,
-  message: 'QR no disponible - sesión ya conectada o no iniciada'
-};
-}
-
-async enviarMensaje(empresaId, nombreSesion, numeroDestino, mensaje) {
-  const sessionKey = `${empresaId}_${nombreSesion}`;
-  console.log(`\n${'='.repeat(60)}`);
-  console.log(`📤 ENVIANDO MENSAJE`);
-  console.log(`   SessionKey: ${sessionKey}`);
-  console.log(`   NumeroDestino: ${numeroDestino}`);
-  console.log(`   Mensaje: ${mensaje?.substring(0, 100)}`);
-  console.log(`${'='.repeat(60)}`);
-
-  const sock = this.sessions.get(sessionKey);
-
-  if (!sock || !sock.user) {
-    console.log(`❌ Sesión no encontrada o no conectada`);
-    throw new Error('Sesión no conectada');
+    return {
+      success: false,
+      message: 'QR no disponible - sesion ya conectada o no iniciada'
+    };
   }
 
-  console.log(`✅ Sesión encontrada - Usuario: ${sock.user.id}`);
+  // Herramienta de envio manual y corporativo 
+  async enviarMensaje(empresaId, nombreSesion, numeroDestino, mensaje) {
+    const sessionKey = `${empresaId}_${nombreSesion}`;
+    console.log(`\n${'='.repeat(60)}`);
+    console.log(`[WHATSAPP] ENVIANDO MENSAJE`);
+    console.log(`   SessionKey: ${sessionKey}`);
+    console.log(`   NumeroDestino: ${numeroDestino}`);
+    console.log(`   Mensaje: ${mensaje?.substring(0, 100)}`);
+    console.log(`${'='.repeat(60)}`);
 
-  let jidFinal = null;
+    const sock = this.sessions.get(sessionKey);
 
-  // PRIORIDAD 1: Buscar JID en cache (el más confiable)
-  const jidCacheKey = `${sessionKey}_${numeroDestino}`;
-  if (this.jidCache.has(jidCacheKey)) {
-    jidFinal = this.jidCache.get(jidCacheKey);
-    console.log(`✅ JID encontrado en jidCache: ${jidFinal}`);
-  }
+    if (!sock || !sock.user) {
+      console.log(`[WHATSAPP] Sesion no encontrada o no conectada`);
+      throw new Error('Sesion no conectada');
+    }
 
-  // PRIORIDAD 2: Buscar en contactCache
-  if (!jidFinal) {
-    for (const [key, value] of this.contactCache.entries()) {
-      if (value.numero === numeroDestino && key.startsWith(sessionKey)) {
-        jidFinal = value.jidOriginal;
-        console.log(`✅ JID encontrado en contactCache: ${jidFinal}`);
-        break;
+    console.log(`[WHATSAPP] Sesion encontrada - Usuario: ${sock.user.id}`);
+
+    let jidFinal = null;
+
+    // PRIORIDAD 1: Buscar JID en cache (el mas confiable)
+    const jidCacheKey = `${sessionKey}_${numeroDestino}`;
+    if (this.jidCache.has(jidCacheKey)) {
+      jidFinal = this.jidCache.get(jidCacheKey);
+      console.log(`[WHATSAPP] JID encontrado en jidCache: ${jidFinal}`);
+    }
+
+    // PRIORIDAD 2: Buscar en contactCache
+    if (!jidFinal) {
+      for (const [key, value] of this.contactCache.entries()) {
+        if (value.numero === numeroDestino && key.startsWith(sessionKey)) {
+          jidFinal = value.jidOriginal;
+          console.log(`[WHATSAPP] JID encontrado en contactCache: ${jidFinal}`);
+          break;
+        }
+      }
+    }
+
+    // PRIORIDAD 3: Si ya viene con @, usarlo directamente
+    if (!jidFinal && numeroDestino.includes('@')) {
+      jidFinal = numeroDestino;
+      console.log(`[WHATSAPP] JID completo recibido: ${jidFinal}`);
+    }
+
+    // FALLBACK: Formato estandar @s.whatsapp.net
+    if (!jidFinal) {
+      jidFinal = `${numeroDestino}@s.whatsapp.net`;
+      console.log(`[WHATSAPP] JID no encontrado en cache, usando estandar: ${jidFinal}`);
+    }
+
+    console.log(`\n[WHATSAPP] JID FINAL PARA ENVIO: ${jidFinal}`);
+
+    // ENVOLTORIO PROTEGIDO PARA NO BLOQUEAR HILO PRINCIPAL SI DEMORA
+    const enviarConTimeout = (jid, contenido, timeout = 10000) => {
+      return Promise.race([
+        sock.sendMessage(jid, contenido),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Timeout enviando mensaje')), timeout)
+        )
+      ]);
+    };
+
+    try {
+      await enviarConTimeout(jidFinal, { text: mensaje }, 10000);
+      console.log(`[WHATSAPP] Mensaje enviado correctamente`);
+      console.log(`${'='.repeat(60)}\n`);
+      return { success: true, message: 'Mensaje enviado' };
+    } catch (error) {
+      console.error(`[WHATSAPP] Error al enviar mensaje:`, error.message);
+
+      if (jidFinal.includes('@lid')) {
+        console.log(`\n[WHATSAPP] Fallo con JID cifrado, intentando con formato estandar...`);
+        const jidEstandar = `${numeroDestino.replace(/@.*$/, '')}@s.whatsapp.net`;
+
+        try {
+          await enviarConTimeout(jidEstandar, { text: mensaje }, 10000);
+          console.log(`[WHATSAPP] Mensaje enviado con JID estandar: ${jidEstandar}`);
+          console.log(`${'='.repeat(60)}\n`);
+          return { success: true, message: 'Mensaje enviado (fallback)' };
+        } catch (fallbackError) {
+          console.error(`[WHATSAPP] Fallback fallido:`, fallbackError.message);
+          throw new Error(`No se pudo enviar el mensaje: ${fallbackError.message}`);
+        }
+      } else {
+        throw new Error(`Error al enviar mensaje: ${error.message}`);
       }
     }
   }
 
-  // PRIORIDAD 3: Si ya viene con @, usarlo directamente
-  if (!jidFinal && numeroDestino.includes('@')) {
-    jidFinal = numeroDestino;
-    console.log(`✅ JID completo recibido: ${jidFinal}`);
+  // Intermediario logico para subida en transacciones como reservas y catalogos interactivos
+  async enviarImagen(empresaId, nombreSesion, numeroDestino, imagenUrl, caption) {
+    const sessionKey = `${empresaId}_${nombreSesion}`;
+
+    console.log(`\n${'='.repeat(60)}`);
+    console.log(`[WHATSAPP] ENVIANDO IMAGEN`);
+    console.log(`   SessionKey: ${sessionKey}`);
+    console.log(`   NumeroDestino: ${numeroDestino}`);
+    console.log(`   ImagenUrl: ${imagenUrl}`);
+    console.log(`   Caption: ${caption?.substring(0, 100)}`);
+    console.log(`${'='.repeat(60)}`);
+
+    const sock = this.sessions.get(sessionKey);
+
+    if (!sock || !sock.user) {
+      console.log(`[WHATSAPP] Sesion no encontrada o no conectada`);
+      throw new Error('Sesion no conectada');
+    }
+
+    console.log(`[WHATSAPP] Sesion encontrada - Usuario: ${sock.user.id}`);
+
+    let jidFinal = null;
+
+    // PRIORIDAD 1: Buscar JID en cache
+    const jidCacheKey = `${sessionKey}_${numeroDestino}`;
+    if (this.jidCache.has(jidCacheKey)) {
+      jidFinal = this.jidCache.get(jidCacheKey);
+      console.log(`[WHATSAPP] JID encontrado en jidCache: ${jidFinal}`);
+    }
+
+    // PRIORIDAD 2: Buscar en contactCache
+    if (!jidFinal) {
+      for (const [key, value] of this.contactCache.entries()) {
+        if (value.numero === numeroDestino && key.startsWith(sessionKey)) {
+          jidFinal = value.jidOriginal;
+          console.log(`[WHATSAPP] JID encontrado en contactCache: ${jidFinal}`);
+          break;
+        }
+      }
+    }
+
+    // PRIORIDAD 3: Si ya viene con @, usarlo directamente
+    if (!jidFinal && numeroDestino.includes('@')) {
+      jidFinal = numeroDestino;
+      console.log(`[WHATSAPP] JID completo recibido: ${jidFinal}`);
+    }
+
+    // FALLBACK: Formato estandar
+    if (!jidFinal) {
+      jidFinal = `${numeroDestino}@s.whatsapp.net`;
+      console.log(`[WHATSAPP] JID no encontrado en cache, usando estandar: ${jidFinal}`);
+    }
+
+    console.log(`\n[WHATSAPP] JID FINAL PARA ENVIO: ${jidFinal}`);
+
+    // FUNcION CON TIMEOUT
+    const enviarConTimeout = (jid, contenido, timeout = 10000) => {
+      return Promise.race([
+        sock.sendMessage(jid, contenido),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Timeout enviando imagen')), timeout)
+        )
+      ]);
+    };
+
+    try {
+      await enviarConTimeout(jidFinal, {
+        image: { url: imagenUrl },
+        caption: caption
+      }, 10000);
+
+      console.log(`[WHATSAPP] Imagen enviada correctamente`);
+      console.log(`${'='.repeat(60)}\n`);
+      return { success: true, message: 'Imagen enviada' };
+    } catch (error) {
+      console.error(`[WHATSAPP] Error al enviar imagen:`, error.message);
+
+      if (jidFinal.includes('@lid')) {
+        console.log(`\n[WHATSAPP] Fallo con JID cifrado, intentando con formato estandar...`);
+        const jidEstandar = `${numeroDestino.replace(/@.*$/, '')}@s.whatsapp.net`;
+
+        try {
+          await enviarConTimeout(jidEstandar, {
+            image: { url: imagenUrl },
+            caption: caption
+          }, 10000);
+          console.log(`[WHATSAPP] Imagen enviada con JID estandar: ${jidEstandar}`);
+          console.log(`${'='.repeat(60)}\n`);
+          return { success: true, message: 'Imagen enviada (fallback)' };
+        } catch (fallbackError) {
+          console.error(`[WHATSAPP] Fallback fallo tambien:`, fallbackError.message);
+          throw new Error(`No se pudo enviar la imagen: ${fallbackError.message}`);
+        }
+      } else {
+        throw new Error(`Error al enviar imagen: ${error.message}`);
+      }
+    }
   }
 
-  // FALLBACK: Formato estándar @s.whatsapp.net
-  if (!jidFinal) {
-    jidFinal = `${numeroDestino}@s.whatsapp.net`;
-    console.log(`⚠️ JID no encontrado en cache, usando estándar: ${jidFinal}`);
+  // ============================================
+  // PROCEDER A TERMINOS DE EJECUCION
+  // ============================================
+
+  // Despliegue de limpieza controlada
+  async cerrarSesion(empresaId, nombreSesion) {
+    const sessionKey = `${empresaId}_${nombreSesion}`;
+    const sock = this.sessions.get(sessionKey);
+    if (sock) {
+      await sock.logout();
+      console.log(`[WHATSAPP] Logout ejecutado para ${sessionKey}`);
+    }
+
+    // Limpiar interval de auto-guardado
+    if (this.storeIntervals.has(sessionKey)) {
+      clearInterval(this.storeIntervals.get(sessionKey));
+      this.storeIntervals.delete(sessionKey);
+      console.log(`[WHATSAPP] Interval de guardado detenido`);
+    }
+
+    this.sessions.delete(sessionKey);
+    this.sessionStartTimes.delete(sessionKey);
+    this.qrCodes.delete(sessionKey);
+    this.stores.delete(sessionKey);
+
+    for (const key of this.contactCache.keys()) {
+      if (key.startsWith(sessionKey)) {
+        this.contactCache.delete(key);
+      }
+    }
+
+    for (const key of this.jidCache.keys()) {
+      if (key.startsWith(sessionKey)) {
+        this.jidCache.delete(key);
+      }
+    }
+
+    try {
+      const { InstanciaWhatsapp } = require('../models');
+      await InstanciaWhatsapp.update(
+        {
+          conectado: false,
+          codigo_qr: null,
+          numero_telefono: null
+        },
+        {
+          where: {
+            empresa_id: empresaId,
+            nombre_sesion: nombreSesion
+          }
+        }
+      );
+      console.log(`[WHATSAPP] BD actualizada - sesion cerrada`);
+    } catch (dbError) {
+      console.error(`[WHATSAPP] Error actualizando BD:`, dbError.message);
+    }
+
+    try {
+      const sessionPath = path.join(__dirname, '../whatsapp-sessions', `session_${sessionKey}`);
+      await fs.rm(sessionPath, { recursive: true, force: true });
+      console.log(`[WHATSAPP] Archivos de sesion eliminados`);
+    } catch (error) {
+      console.error(`[WHATSAPP] Error eliminando archivos:`, error.message);
+    }
+
+    return { success: true, message: 'Sesion cerrada completamente' };
   }
 
-  console.log(`\n📱 JID FINAL PARA ENVÍO: ${jidFinal}`);
-
-  // 🔥 FUNCIÓN CON TIMEOUT
-  const enviarConTimeout = (jid, contenido, timeout = 10000) => {
-    return Promise.race([
-      sock.sendMessage(jid, contenido),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Timeout enviando mensaje')), timeout)
-      )
-    ]);
-  };
-
-  try {
-    await enviarConTimeout(jidFinal, { text: mensaje }, 10000); // 10 segundos timeout
-    console.log(`✅ Mensaje enviado correctamente`);
-    console.log(`${'='.repeat(60)}\n`);
-    return { success: true, message: 'Mensaje enviado' };
-  } catch (error) {
-    console.error(`❌ Error al enviar mensaje:`, error.message);
-
-    if (jidFinal.includes('@lid')) {
-      console.log(`\n⚠️ Fallo con JID cifrado, intentando con formato estándar...`);
-      const jidEstandar = `${numeroDestino.replace(/@.*$/, '')}@s.whatsapp.net`;
-
+  // Pre-cargar entorno desde memoria persistente si ocurrio cierre del script node
+  async cargarSesionesGuardadas() {
+    try {
+      const sessionsDir = path.join(__dirname, '../whatsapp-sessions');
+      console.log(`[WHATSAPP] Buscando sesiones en: ${sessionsDir}`);
       try {
-        await enviarConTimeout(jidEstandar, { text: mensaje }, 10000);
-        console.log(`✅ Mensaje enviado con JID estándar: ${jidEstandar}`);
-        console.log(`${'='.repeat(60)}\n`);
-        return { success: true, message: 'Mensaje enviado (fallback)' };
-      } catch (fallbackError) {
-        console.error(`❌ Fallback también falló:`, fallbackError.message);
-        throw new Error(`No se pudo enviar el mensaje: ${fallbackError.message}`);
+        await fs.access(sessionsDir);
+      } catch {
+        console.log(`[WHATSAPP] No hay carpeta de sesiones - se creara al iniciar sesion`);
+        return { success: true, message: 'No hay sesiones previas' };
       }
-    } else {
-      throw new Error(`Error al enviar mensaje: ${error.message}`);
-    }
-  }
-}
 
-// 🔥 TAMBIÉN ACTUALIZA enviarImagen con el mismo patrón
-async enviarImagen(empresaId, nombreSesion, numeroDestino, imagenUrl, caption) {
-  const sessionKey = `${empresaId}_${nombreSesion}`;
-  
-  console.log(`\n${'='.repeat(60)}`);
-  console.log(`📸 ENVIANDO IMAGEN`);
-  console.log(`   SessionKey: ${sessionKey}`);
-  console.log(`   NumeroDestino: ${numeroDestino}`);
-  console.log(`   ImagenUrl: ${imagenUrl}`);
-  console.log(`   Caption: ${caption?.substring(0, 100)}`);
-  console.log(`${'='.repeat(60)}`);
+      const files = await fs.readdir(sessionsDir);
+      const sessionFolders = files.filter(f => f.startsWith('session_'));
 
-  const sock = this.sessions.get(sessionKey);
-
-  if (!sock || !sock.user) {
-    console.log(`❌ Sesión no encontrada o no conectada`);
-    throw new Error('Sesión no conectada');
-  }
-
-  console.log(`✅ Sesión encontrada - Usuario: ${sock.user.id}`);
-
-  let jidFinal = null;
-
-  const jidCacheKey = `${sessionKey}_${numeroDestino}`;
-  if (this.jidCache.has(jidCacheKey)) {
-    jidFinal = this.jidCache.get(jidCacheKey);
-    console.log(`✅ JID encontrado en jidCache: ${jidFinal}`);
-  }
-
-  if (!jidFinal) {
-    for (const [key, value] of this.contactCache.entries()) {
-      if (value.numero === numeroDestino && key.startsWith(sessionKey)) {
-        jidFinal = value.jidOriginal;
-        console.log(`✅ JID encontrado en contactCache: ${jidFinal}`);
-        break;
+      if (sessionFolders.length === 0) {
+        console.log(`[WHATSAPP] No hay sesiones guardadas en estructura`);
+        return { success: true, message: 'No hay sesiones previas' };
       }
+
+      console.log(`[WHATSAPP] Encontradas ${sessionFolders.length} sesion(es) recuperables`);
+      console.log(`   ${sessionFolders.join(', ')}`);
+      console.log(`[WHATSAPP] Se reconectaran automaticamente al invocar inicializacion`);
+
+      return {
+        success: true,
+        sesiones: sessionFolders,
+        message: `${sessionFolders.length} sesion(es) listas para restauracion`
+      };
+    } catch (error) {
+      console.error(`[WHATSAPP] Error al restablecer sesiones:`, error);
+      return { success: false, error: error.message };
     }
   }
 
-  if (!jidFinal && numeroDestino.includes('@')) {
-    jidFinal = numeroDestino;
-    console.log(`✅ JID completo recibido: ${jidFinal}`);
-  }
-
-  if (!jidFinal) {
-    jidFinal = `${numeroDestino}@s.whatsapp.net`;
-    console.log(`⚠️ JID no encontrado en cache, usando estándar: ${jidFinal}`);
-  }
-
-  console.log(`\n📱 JID FINAL PARA ENVÍO: ${jidFinal}`);
-
-  // 🔥 FUNCIÓN CON TIMEOUT
-  const enviarConTimeout = (jid, contenido, timeout = 10000) => {
-    return Promise.race([
-      sock.sendMessage(jid, contenido),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Timeout enviando imagen')), timeout)
-      )
-    ]);
-  };
-
-  try {
-    await enviarConTimeout(jidFinal, {
-      image: { url: imagenUrl },
-      caption: caption
-    }, 10000);
-    
-    console.log(`✅ Imagen enviada correctamente`);
-    console.log(`${'='.repeat(60)}\n`);
-    return { success: true, message: 'Imagen enviada' };
-  } catch (error) {
-    console.error(`❌ Error al enviar imagen:`, error.message);
-
-    if (jidFinal.includes('@lid')) {
-      console.log(`\n⚠️ Fallo con JID cifrado, intentando con formato estándar...`);
-      const jidEstandar = `${numeroDestino.replace(/@.*$/, '')}@s.whatsapp.net`;
-
-      try {
-        await enviarConTimeout(jidEstandar, {
-          image: { url: imagenUrl },
-          caption: caption
-        }, 10000);
-        console.log(`✅ Imagen enviada con JID estándar: ${jidEstandar}`);
-        console.log(`${'='.repeat(60)}\n`);
-        return { success: true, message: 'Imagen enviada (fallback)' };
-      } catch (fallbackError) {
-        console.error(`❌ Fallback también falló:`, fallbackError.message);
-        throw new Error(`No se pudo enviar la imagen: ${fallbackError.message}`);
-      }
-    } else {
-      throw new Error(`Error al enviar imagen: ${error.message}`);
+  // Informacion de contacto
+  obtenerClienteActivo(empresaId, nombreSesion) {
+    const sessionKey = `${empresaId}_${nombreSesion}`;
+    const sock = this.sessions.get(sessionKey);
+    if (!sock || !sock.user) {
+      return null;
     }
-  }
-}
-
-
-async cerrarSesion(empresaId, nombreSesion) {
-const sessionKey = `${empresaId}_${nombreSesion}`;
-const sock = this.sessions.get(sessionKey);
-if (sock) {
-  await sock.logout();
-  console.log(`🔒 Logout ejecutado para ${sessionKey}`);
-}
-
-// Limpiar interval de auto-guardado
-if (this.storeIntervals.has(sessionKey)) {
-  clearInterval(this.storeIntervals.get(sessionKey));
-  this.storeIntervals.delete(sessionKey);
-  console.log(`⏱️ Interval de guardado detenido`);
-}
-
-this.sessions.delete(sessionKey);
-this.sessionStartTimes.delete(sessionKey);
-this.qrCodes.delete(sessionKey);
-this.stores.delete(sessionKey);
-
-for (const key of this.contactCache.keys()) {
-  if (key.startsWith(sessionKey)) {
-    this.contactCache.delete(key);
-  }
-}
-
-for (const key of this.jidCache.keys()) {
-  if (key.startsWith(sessionKey)) {
-    this.jidCache.delete(key);
-  }
-}
-
-try {
-  const { InstanciaWhatsapp } = require('../models');
-  await InstanciaWhatsapp.update(
-    {
-      conectado: false,
-      codigo_qr: null,
-      numero_telefono: null
-    },
-    {
-      where: {
-        empresa_id: empresaId,
-        nombre_sesion: nombreSesion
-      }
-    }
-  );
-  console.log(`💾 BD actualizada - sesión cerrada`);
-} catch (dbError) {
-  console.error(`⚠️ Error actualizando BD:`, dbError.message);
-}
-
-try {
-  const sessionPath = path.join(__dirname, '../whatsapp-sessions', `session_${sessionKey}`);
-  await fs.rm(sessionPath, { recursive: true, force: true });
-  console.log(`🗑️ Archivos de sesión eliminados`);
-} catch (error) {
-  console.error(`⚠️ Error eliminando archivos:`, error.message);
-}
-
-return { success: true, message: 'Sesión cerrada completamente' };
-}
-async cargarSesionesGuardadas() {
-try {
-const sessionsDir = path.join(__dirname, '../whatsapp-sessions');
-console.log(`📂 Buscando sesiones en: ${sessionsDir}`);
-try {
-await fs.access(sessionsDir);
-} catch {
-console.log(`ℹ️  No hay carpeta de sesiones - se creará al iniciar sesión`);
-return { success: true, message: 'No hay sesiones previas' };
-}
-  const files = await fs.readdir(sessionsDir);
-  const sessionFolders = files.filter(f => f.startsWith('session_'));
-
-  if (sessionFolders.length === 0) {
-    console.log(`ℹ️  No hay sesiones guardadas`);
-    return { success: true, message: 'No hay sesiones previas' };
+    return sock;
   }
 
-  console.log(`✅ Encontradas ${sessionFolders.length} sesión(es) guardada(s)`);
-  console.log(`   ${sessionFolders.join(', ')}`);
-  console.log(`ℹ️  Se reconectarán automáticamente al llamar iniciarSesion()`);
-
-  return {
-    success: true,
-    sesiones: sessionFolders,
-    message: `${sessionFolders.length} sesión(es) disponibles para reconexión`
-  };
-} catch (error) {
-  console.error(`❌ Error al cargar sesiones:`, error);
-  return { success: false, error: error.message };
-}
-}
-obtenerClienteActivo(empresaId, nombreSesion) {
-const sessionKey = `${empresaId}_${nombreSesion}`;
-const sock = this.sessions.get(sessionKey);
-if (!sock || !sock.user) {
-return null;
-}
-return sock;
-}
-obtenerEstadoSesion(empresaId, nombreSesion) {
-const sessionKey = `${empresaId}_${nombreSesion}`;
-const sock = this.sessions.get(sessionKey);
-const qr = this.qrCodes.get(sessionKey);
-return {
-existe: this.sessions.has(sessionKey),
-conectado: sock && sock.user ? true : false,
-tieneQR: !!qr,
-usuario: sock?.user || null
-};
-}
-
-
-
-async enviarImagen(empresaId, nombreSesion, numeroDestino, imagenUrl, caption) {
-  const sessionKey = `${empresaId}_${nombreSesion}`;
-  
-  console.log(`\n${'='.repeat(60)}`);
-  console.log(`📸 ENVIANDO IMAGEN`);
-  console.log(`   SessionKey: ${sessionKey}`);
-  console.log(`   NumeroDestino: ${numeroDestino}`);
-  console.log(`   ImagenUrl: ${imagenUrl}`);
-  console.log(`   Caption: ${caption?.substring(0, 100)}`);
-  console.log(`${'='.repeat(60)}`);
-
-  const sock = this.sessions.get(sessionKey);
-
-  if (!sock || !sock.user) {
-    console.log(`❌ Sesión no encontrada o no conectada`);
-    throw new Error('Sesión no conectada');
+  // Resumen del entorno por sesion consultada
+  obtenerEstadoSesion(empresaId, nombreSesion) {
+    const sessionKey = `${empresaId}_${nombreSesion}`;
+    const sock = this.sessions.get(sessionKey);
+    const qr = this.qrCodes.get(sessionKey);
+    return {
+      existe: this.sessions.has(sessionKey),
+      conectado: sock && sock.user ? true : false,
+      tieneQR: !!qr,
+      usuario: sock?.user || null
+    };
   }
-
-  console.log(`✅ Sesión encontrada - Usuario: ${sock.user.id}`);
-
-  let jidFinal = null;
-
-  // PRIORIDAD 1: Buscar JID en cache
-  const jidCacheKey = `${sessionKey}_${numeroDestino}`;
-  if (this.jidCache.has(jidCacheKey)) {
-    jidFinal = this.jidCache.get(jidCacheKey);
-    console.log(`✅ JID encontrado en jidCache: ${jidFinal}`);
-  }
-
-  // PRIORIDAD 2: Buscar en contactCache
-  if (!jidFinal) {
-    for (const [key, value] of this.contactCache.entries()) {
-      if (value.numero === numeroDestino && key.startsWith(sessionKey)) {
-        jidFinal = value.jidOriginal;
-        console.log(`✅ JID encontrado en contactCache: ${jidFinal}`);
-        break;
-      }
-    }
-  }
-
-  // PRIORIDAD 3: Si ya viene con @, usarlo directamente
-  if (!jidFinal && numeroDestino.includes('@')) {
-    jidFinal = numeroDestino;
-    console.log(`✅ JID completo recibido: ${jidFinal}`);
-  }
-
-  // FALLBACK: Formato estándar
-  if (!jidFinal) {
-    jidFinal = `${numeroDestino}@s.whatsapp.net`;
-    console.log(`⚠️ JID no encontrado en cache, usando estándar: ${jidFinal}`);
-  }
-
-  console.log(`\n📱 JID FINAL PARA ENVÍO: ${jidFinal}`);
-
-  try {
-    await sock.sendMessage(jidFinal, {
-      image: { url: imagenUrl },
-      caption: caption
-    });
-    
-    console.log(`✅ Imagen enviada correctamente`);
-    console.log(`${'='.repeat(60)}\n`);
-    return { success: true, message: 'Imagen enviada' };
-  } catch (error) {
-    console.error(`❌ Error al enviar imagen:`, error.message);
-
-    if (jidFinal.includes('@lid')) {
-      console.log(`\n⚠️ Fallo con JID cifrado, intentando con formato estándar...`);
-      const jidEstandar = `${numeroDestino.replace(/@.*$/, '')}@s.whatsapp.net`;
-
-      try {
-        await sock.sendMessage(jidEstandar, {
-          image: { url: imagenUrl },
-          caption: caption
-        });
-        console.log(`✅ Imagen enviada con JID estándar: ${jidEstandar}`);
-        console.log(`${'='.repeat(60)}\n`);
-        return { success: true, message: 'Imagen enviada (fallback)' };
-      } catch (fallbackError) {
-        console.error(`❌ Fallback también falló:`, fallbackError.message);
-        throw new Error(`No se pudo enviar la imagen: ${fallbackError.message}`);
-      }
-    } else {
-      throw new Error(`Error al enviar imagen: ${error.message}`);
-    }
-  }
-}
 
 }
 

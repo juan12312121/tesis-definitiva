@@ -3,6 +3,7 @@ const { Op } = require('sequelize');
 
 const catalogoController = {
 
+  // Consultar elementos con su categoria sin necesidad de loguearse (para clientes de una empresa)
   // GET /api/catalogo/publico/:empresaId
   obtenerCatalogoPublico: async (req, res) => {
     try {
@@ -17,6 +18,7 @@ const catalogoController = {
       return res.json({
         success: true,
         total: items.length,
+        // Proyectar arreglo asegurandose de obviar datos sensibles y facilitar la lectura en frontend
         data: items.map(item => ({
           id: item.id,
           nombre_item: item.nombre_item,
@@ -30,19 +32,22 @@ const catalogoController = {
       });
 
     } catch (error) {
-      console.error('Error al obtener catálogo público:', error);
-      return res.status(500).json({ success: false, message: 'Error al obtener catálogo' });
+      console.error('Error al obtener catalogo publico:', error);
+      return res.status(500).json({ success: false, message: 'Error al obtener catalogo' });
     }
   },
 
+  // Obtener el catalogo como administrador
   // GET /api/catalogo/
   obtenerCatalogo: async (req, res) => {
     try {
       const empresaId = req.usuario.empresa_id;
+      // Lectura de parametros de filtrado opcionales (busqueda, categoria)
       const { categoria_id, disponible, busqueda } = req.query;
 
       const where = { empresa_id: empresaId };
 
+      // Se aplican al objeto de validacion solo los filtros especificos ingresados
       if (categoria_id) where.categoria_id = categoria_id;
       if (disponible !== undefined) where.disponible = disponible === 'true';
       if (busqueda) {
@@ -53,6 +58,7 @@ const catalogoController = {
         ];
       }
 
+      // Lanzar consulta final 
       const items = await CatalogoItem.findAll({
         where,
         include: [{ model: CategoriaProducto, as: 'categoria', attributes: ['id', 'nombre'] }],
@@ -62,17 +68,19 @@ const catalogoController = {
       return res.json({ success: true, total: items.length, data: items });
 
     } catch (error) {
-      console.error('Error al obtener catálogo:', error);
-      return res.status(500).json({ success: false, message: 'Error al obtener catálogo' });
+      console.error('Error al obtener catalogo:', error);
+      return res.status(500).json({ success: false, message: 'Error al obtener catalogo' });
     }
   },
 
+  // Añadir un nuevo producto o item al catalogo administrado
   // POST /api/catalogo/
   crearItem: async (req, res) => {
     try {
       const empresaId = req.usuario.empresa_id;
       const { nombre_item, descripcion, precio, imagen_url, stock, disponible, categoria_id, tags } = req.body;
 
+      // Crear componente en la base
       const nuevoItem = await CatalogoItem.create({
         empresa_id: empresaId,
         nombre_item, descripcion, precio,
@@ -84,6 +92,7 @@ const catalogoController = {
         fecha_actualizacion: new Date()
       });
 
+      // Recuperar el componente nuevamente anexando el nombre de categoria que le pertenece
       const itemConCategoria = await CatalogoItem.findByPk(nuevoItem.id, {
         include: [{ model: CategoriaProducto, as: 'categoria', attributes: ['id', 'nombre'] }]
       });
@@ -96,6 +105,7 @@ const catalogoController = {
     }
   },
 
+  // Extraer configuraciones de unicamente un registro
   // GET /api/catalogo/:id
   obtenerItem: async (req, res) => {
     try {
@@ -117,6 +127,7 @@ const catalogoController = {
     }
   },
 
+  // Modificar registro sin crear duplicados
   // PUT /api/catalogo/:id
   actualizarItem: async (req, res) => {
     try {
@@ -128,6 +139,7 @@ const catalogoController = {
 
       if (!item) return res.status(404).json({ success: false, message: 'Producto no encontrado' });
 
+      // Aplicar al ORM la modificacion parcial con los nuevos campos proveidos (mantener categoria si no es enviada)
       await item.update({
         nombre_item, descripcion, precio,
         imagen_url, stock, disponible,
@@ -148,6 +160,7 @@ const catalogoController = {
     }
   },
 
+  // Eliminar un elemento particular del catalogo   
   // DELETE /api/catalogo/:id
   eliminarItem: async (req, res) => {
     try {
@@ -168,6 +181,7 @@ const catalogoController = {
     }
   },
 
+  // Busqueda manual generica usando un termino clave
   // GET /api/catalogo/buscar
   buscarItems: async (req, res) => {
     try {
@@ -176,6 +190,8 @@ const catalogoController = {
 
       const where = { empresa_id: empresaId };
       if (categoria_id) where.categoria_id = categoria_id;
+
+      // Aplicar la clausula o, si se cumple como parte del titulo, etiqueta o descripcion se incluira
       if (busqueda) {
         where[Op.or] = [
           { nombre_item: { [Op.like]: `%${busqueda}%` } },
@@ -198,6 +214,7 @@ const catalogoController = {
     }
   },
 
+  // Retornar la lista de categorias que posee la empresa para filtrar inventario
   // GET /api/catalogo/categorias
   obtenerCategorias: async (req, res) => {
     try {
@@ -211,11 +228,12 @@ const catalogoController = {
       return res.json({ success: true, data: categorias });
 
     } catch (error) {
-      console.error('Error al obtener categorías:', error);
-      return res.status(500).json({ success: false, message: 'Error al obtener categorías' });
+      console.error('Error al obtener categorias:', error);
+      return res.status(500).json({ success: false, message: 'Error al obtener categorias' });
     }
   },
 
+  // Registro de un elemento base desde donde englobar productos   
   // POST /api/catalogo/categorias
   agregarCategoria: async (req, res) => {
     try {
@@ -235,11 +253,12 @@ const catalogoController = {
       return res.status(201).json({ success: true, data: categoria });
 
     } catch (error) {
-      console.error('Error al crear categoría:', error);
-      return res.status(500).json({ success: false, message: 'Error al crear categoría' });
+      console.error('Error al crear categoria:', error);
+      return res.status(500).json({ success: false, message: 'Error al crear categoria' });
     }
   },
 
+  // Eliminacion logica y temporal (soft delete visual) de la categoria
   // DELETE /api/catalogo/categorias/:id
   eliminarCategoria: async (req, res) => {
     try {
@@ -248,19 +267,21 @@ const catalogoController = {
 
       const categoria = await CategoriaProducto.findOne({ where: { id, empresa_id: empresaId } });
 
-      if (!categoria) return res.status(404).json({ success: false, message: 'Categoría no encontrada' });
+      if (!categoria) return res.status(404).json({ success: false, message: 'Categoria no encontrada' });
 
+      // Ocultar al entorno visual
       categoria.activa = false;
       await categoria.save();
 
-      return res.json({ success: true, message: 'Categoría eliminada' });
+      return res.json({ success: true, message: 'Categoria eliminada' });
 
     } catch (error) {
-      console.error('Error al eliminar categoría:', error);
-      return res.status(500).json({ success: false, message: 'Error al eliminar categoría' });
+      console.error('Error al eliminar categoria:', error);
+      return res.status(500).json({ success: false, message: 'Error al eliminar categoria' });
     }
   },
 
+  // Obtener clasificaciones de elementos a presentar como front store
   obtenerCategoriasPublico: async (req, res) => {
     try {
       const { empresaId } = req.params;
@@ -272,7 +293,8 @@ const catalogoController = {
           as: 'items',
           where: { disponible: true },
           attributes: [],
-          required: true  // Solo categorías que tengan al menos 1 producto disponible
+          // Obligar a que la categoria cuente con elementos dentro de ella para listarla publicamente
+          required: true
         }],
         order: [['nombre', 'ASC']]
       });
@@ -280,16 +302,18 @@ const catalogoController = {
       return res.json({ success: true, data: categorias });
 
     } catch (error) {
-      console.error('Error al obtener categorías públicas:', error);
-      return res.status(500).json({ success: false, message: 'Error al obtener categorías' });
+      console.error('Error al obtener categorias publicas:', error);
+      return res.status(500).json({ success: false, message: 'Error al obtener categorias' });
     }
   },
 
+  // Presentacion de metricas operativas generales
   // GET /api/catalogo/estadisticas
   obtenerEstadisticas: async (req, res) => {
     try {
       const empresaId = req.usuario.empresa_id;
 
+      // Realizar lecturas concurrentes simultaneamente con varios niveles de stock
       const [totalProductos, sinStock, stockBajo] = await Promise.all([
         CatalogoItem.count({ where: { empresa_id: empresaId } }),
         CatalogoItem.count({ where: { empresa_id: empresaId, stock: 0 } }),
@@ -307,16 +331,18 @@ const catalogoController = {
       });
 
     } catch (error) {
-      console.error('Error al obtener estadísticas:', error);
-      return res.status(500).json({ success: false, message: 'Error al obtener estadísticas' });
+      console.error('Error al obtener estadisticas:', error);
+      return res.status(500).json({ success: false, message: 'Error al obtener estadisticas' });
     }
   },
 
+  // Busqueda amplia usada a menuda por cronjobs o validaciones que cruzan empresas
   // GET /api/catalogo/stock/bajo-todas-empresas
   obtenerStockBajoTodasEmpresas: async (req, res) => {
     try {
       const umbral = parseInt(req.query.umbral) || 5;
 
+      // Ubicar de manera holistica productos con menos unidades que el umbral 
       const productosBajos = await CatalogoItem.findAll({
         where: {
           disponible: true,
@@ -330,12 +356,14 @@ const catalogoController = {
         return res.json({ success: true, umbral, total_empresas: 0, data: [] });
       }
 
+      // Obtener el directorio de las empresas afectadas
       const empresaIds = [...new Set(productosBajos.map(p => p.empresa_id))];
       const empresas = await Empresa.findAll({
         where: { id: { [Op.in]: empresaIds } },
         attributes: ['id', 'nombre', 'correo_contacto']
       });
 
+      // Conformar objeto de envio por cada organizacion que padece bajas 
       const resultado = empresas.map(empresa => {
         const productosDeEmpresa = productosBajos
           .filter(p => p.empresa_id === empresa.id)
@@ -360,11 +388,12 @@ const catalogoController = {
       return res.json({ success: true, umbral, total_empresas: resultado.length, data: resultado });
 
     } catch (error) {
-      console.error('❌ Error obtenerStockBajoTodasEmpresas:', error);
+      console.error('Error obtenerStockBajoTodasEmpresas:', error);
       return res.status(500).json({ success: false, message: 'Error al obtener stock bajo', error: error.message });
     }
   },
 
+  // Metrica especifica del estado general de inventario inferior de esta organizacion
   // GET /api/catalogo/stock/bajo/:empresaId
   obtenerStockBajoPorEmpresa: async (req, res) => {
     try {
@@ -397,11 +426,12 @@ const catalogoController = {
       });
 
     } catch (error) {
-      console.error('❌ Error obtenerStockBajoPorEmpresa:', error);
+      console.error('Error obtenerStockBajoPorEmpresa:', error);
       return res.status(500).json({ success: false, message: 'Error al obtener stock bajo', error: error.message });
     }
   },
 
+  // Sobreescribir el valor referencial para existencias de cierto bien del catalogo
   // PATCH /api/catalogo/:id/stock
   actualizarStock: async (req, res) => {
     try {
@@ -417,6 +447,7 @@ const catalogoController = {
 
       if (!item) return res.status(404).json({ success: false, message: 'Producto no encontrado' });
 
+      // Capturar trazabilidad del inventario y modificar
       const stockAnterior = item.stock;
       await item.update({ stock: parseInt(stock), fecha_actualizacion: new Date() });
 
@@ -427,7 +458,7 @@ const catalogoController = {
       });
 
     } catch (error) {
-      console.error('❌ Error al actualizar stock:', error);
+      console.error('Error al actualizar stock:', error);
       return res.status(500).json({ success: false, message: 'Error al actualizar stock', error: error.message });
     }
   }

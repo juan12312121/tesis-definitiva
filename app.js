@@ -9,14 +9,20 @@ const { testConnection } = require('./config/database');
 const whatsappService = require('./services/whatsappService');
 
 // Rutas
-const authRoutes = require('./routes/auth.routes');
-const empresaRoutes = require('./routes/empresa.routes');
-const whatsappRoutes = require('./routes/whatsapp.routes');
-const chatbotRoutes = require('./routes/chatbotRoutes');
-const historialRoutes = require('./routes/historialRoutes');
-const catalogoRoutes = require('./routes/catalogoRoutes');
-const uploadRoutes = require('./routes/upload.routes'); // ← NUEVA RUTA
-const pedidoRoutes = require('./routes/pedido.routes');
+const authRoutes             = require('./routes/auth.routes');
+const empresaRoutes          = require('./routes/empresa.routes');
+const whatsappRoutes         = require('./routes/whatsapp.routes');
+const chatbotRoutes          = require('./routes/chatbotRoutes');
+const historialRoutes        = require('./routes/historialRoutes');
+const catalogoRoutes         = require('./routes/catalogoRoutes');
+const uploadRoutes           = require('./routes/upload.routes');
+const pedidoRoutes           = require('./routes/pedido.routes');
+// ── NUEVAS ────────────────────────────────────────────────────
+const categoriaServicioRoutes    = require('./routes/categoriaServicioRoutes');
+const catalogoServicioRoutes     = require('./routes/catalogoServicioRoutes');
+const disponibilidadRoutes       = require('./routes/disponibilidadRoutes');
+const reservacionRoutes          = require('./routes/reservacionRoutes');
+// ─────────────────────────────────────────────────────────────
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -31,14 +37,20 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Rutas
-app.use('/api/auth', authRoutes);
-app.use('/api/empresa', empresaRoutes);
-app.use('/api/whatsapp', whatsappRoutes);
-app.use('/api/chatbot', chatbotRoutes);
-app.use('/api/historial', historialRoutes);
-app.use('/api/catalogo', catalogoRoutes);
-app.use('/api/upload', uploadRoutes); // ← NUEVA RUTA
-app.use('/api/pedidos', pedidoRoutes);
+app.use('/api/auth',               authRoutes);
+app.use('/api/empresa',            empresaRoutes);
+app.use('/api/whatsapp',           whatsappRoutes);
+app.use('/api/chatbot',            chatbotRoutes);
+app.use('/api/historial',          historialRoutes);
+app.use('/api/catalogo',           catalogoRoutes);
+app.use('/api/upload',             uploadRoutes);
+app.use('/api/pedidos',            pedidoRoutes);
+// ── NUEVAS ────────────────────────────────────────────────────
+app.use('/api/categorias-servicios', categoriaServicioRoutes);
+app.use('/api/catalogo-servicios',   catalogoServicioRoutes);
+app.use('/api/disponibilidad',       disponibilidadRoutes);
+app.use('/api/reservaciones',        reservacionRoutes);
+// ─────────────────────────────────────────────────────────────
 
 // Ruta de prueba
 app.get('/', (req, res) => {
@@ -51,7 +63,9 @@ app.get('/', (req, res) => {
       '✅ Configuración personalizable',
       '✅ Historial de mensajes',
       '✅ Respuestas automáticas',
-      '✅ Subida de imágenes'
+      '✅ Subida de imágenes',
+      '✅ Catálogo de servicios',
+      '✅ Reservaciones'
     ]
   });
 });
@@ -77,10 +91,8 @@ app.use((err, req, res, next) => {
 // Iniciar servidor
 const iniciarServidor = async () => {
   try {
-    // Probar conexión a la base de datos
     await testConnection();
     
-    // Iniciar servidor
     app.listen(PORT, async () => {
       console.log(`
 ╔══════════════════════════════════════════════╗
@@ -94,11 +106,12 @@ const iniciarServidor = async () => {
 ║   ⚙️  Configuración personalizable          ║
 ║   💾 Historial de mensajes                  ║
 ║   📤 Subida de imágenes                     ║
+║   📋 Catálogo de servicios                  ║
+║   📅 Reservaciones                          ║
 ║                                              ║
 ╚══════════════════════════════════════════════╝
       `);
 
-      // Cargar sesiones guardadas
       console.log('\n🔄 Cargando sesiones de WhatsApp guardadas...\n');
       try {
         await whatsappService.cargarSesionesGuardadas();
@@ -107,7 +120,6 @@ const iniciarServidor = async () => {
         console.error('\n❌ Error al cargar sesiones de WhatsApp:', error);
       }
 
-      // Mostrar rutas disponibles
       console.log('📋 Rutas disponibles:');
       console.log('   AUTH:');
       console.log('   - POST   /api/auth/login');
@@ -119,21 +131,35 @@ const iniciarServidor = async () => {
       console.log('   - POST   /api/whatsapp/enviar-mensaje');
       console.log('   CHATBOT:');
       console.log('   - GET    /api/chatbot/configuracion/:empresaId');
-      console.log('   - POST   /api/chatbot/configuracion/:empresaId');
       console.log('   - PUT    /api/chatbot/configuracion/:empresaId');
-      console.log('   - GET    /api/chatbot/verificar-horario/:empresaId');
-      console.log('   HISTORIAL:');
-      console.log('   - GET    /api/historial/cliente/:empresaId/:numeroCliente');
-      console.log('   - GET    /api/historial/clientes/:empresaId');
-      console.log('   - GET    /api/historial/estadisticas/:empresaId');
-      console.log('   CATÁLOGO:');
-      console.log('   - GET    /api/catalogo/:empresaId');
-      console.log('   - POST   /api/catalogo/:empresaId');
-      console.log('   - PUT    /api/catalogo/:empresaId/:itemId');
-      console.log('   - DELETE /api/catalogo/:empresaId/:itemId');
-      console.log('   UPLOAD:');
-      console.log('   - POST   /api/upload/imagen');
-      console.log('   - DELETE /api/upload/imagen/:filename\n');
+      console.log('   CATÁLOGO PRODUCTOS:');
+      console.log('   - GET    /api/catalogo/');
+      console.log('   - POST   /api/catalogo/');
+      console.log('   - PUT    /api/catalogo/:id');
+      console.log('   - DELETE /api/catalogo/:id');
+      console.log('   CATÁLOGO SERVICIOS:');
+      console.log('   - GET    /api/catalogo-servicios/:empresaId');
+      console.log('   - GET    /api/catalogo-servicios/publico/:empresaId');
+      console.log('   - POST   /api/catalogo-servicios/');
+      console.log('   - PUT    /api/catalogo-servicios/:id');
+      console.log('   - DELETE /api/catalogo-servicios/:id');
+      console.log('   CATEGORÍAS SERVICIOS:');
+      console.log('   - GET    /api/categorias-servicios/:empresaId');
+      console.log('   - POST   /api/categorias-servicios/');
+      console.log('   - PUT    /api/categorias-servicios/:id');
+      console.log('   - DELETE /api/categorias-servicios/:id');
+      console.log('   DISPONIBILIDAD:');
+      console.log('   - GET    /api/disponibilidad/:servicioId');
+      console.log('   - POST   /api/disponibilidad/');
+      console.log('   - POST   /api/disponibilidad/bulk/:servicioId');
+      console.log('   - PUT    /api/disponibilidad/:id');
+      console.log('   - DELETE /api/disponibilidad/:id');
+      console.log('   RESERVACIONES:');
+      console.log('   - GET    /api/reservaciones/:empresaId');
+      console.log('   - GET    /api/reservaciones/cliente/:telefono/:empresaId');
+      console.log('   - POST   /api/reservaciones/');
+      console.log('   - PUT    /api/reservaciones/:id/estado');
+      console.log('   - DELETE /api/reservaciones/:id\n');
     });
   } catch (error) {
     console.error('❌ Error al iniciar servidor:', error);

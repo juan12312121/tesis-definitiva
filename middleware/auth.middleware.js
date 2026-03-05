@@ -1,6 +1,4 @@
-// middleware/auth.js (TU VERSIÓN - NO REEMPLAZAR)
-// Este es tu middleware existente, no necesitas cambiarlo
-// Solo asegúrate de que exporta verificarToken
+
 
 const jwt = require('jsonwebtoken');
 const { Usuario } = require('../models');
@@ -48,14 +46,14 @@ const verificarToken = async (req, res, next) => {
 
   } catch (error) {
     console.error('Error en autenticación:', error);
-    
+
     if (error.name === 'JsonWebTokenError') {
       return res.status(401).json({
         success: false,
         message: 'Token inválido'
       });
     }
-    
+
     if (error.name === 'TokenExpiredError') {
       return res.status(401).json({
         success: false,

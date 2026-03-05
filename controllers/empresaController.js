@@ -3,7 +3,7 @@ const bcrypt = require('bcryptjs');
 
 class EmpresaController {
 
-  // Sin cambios ─────────────────────────────────────────────
+  // Obtener los datos organizados que estructuran y describen la empresa en linea
   async obtenerEmpresa(req, res) {
     try {
       const empresaId = req.usuario.empresa_id;
@@ -11,8 +11,9 @@ class EmpresaController {
       const empresa = await Empresa.findByPk(empresaId, {
         attributes: [
           'id', 'nombre', 'correo_contacto', 'telefono_contacto',
-          'tipo_negocio', 'onboarding_completado', 'fecha_creacion' // ── NUEVO: agregar campos
+          'tipo_negocio', 'onboarding_completado', 'fecha_creacion' // Campos base anadidos logicamente
         ],
+        // Extraer paralelamente referencias a los administradores e instancia de WhatsApp
         include: [
           {
             model: Usuario,
@@ -35,11 +36,11 @@ class EmpresaController {
 
     } catch (error) {
       console.error('Error al obtener empresa:', error);
-      res.status(500).json({ success: false, message: 'Error al obtener información de la empresa' });
+      res.status(500).json({ success: false, message: 'Error al obtener informacion de la empresa' });
     }
   }
 
-  // Sin cambios ─────────────────────────────────────────────
+  // Refactor interno desde configuracion para modificar los correos o descripciones 
   async actualizarEmpresa(req, res) {
     try {
       const empresaId = req.usuario.empresa_id;
@@ -51,6 +52,7 @@ class EmpresaController {
         return res.status(404).json({ success: false, message: 'Empresa no encontrada' });
       }
 
+      // Proceso gradual si la peticion incorpora o no todos los campos
       if (nombre) empresa.nombre = nombre;
       if (correo_contacto !== undefined) empresa.correo_contacto = correo_contacto;
       if (telefono_contacto !== undefined) empresa.telefono_contacto = telefono_contacto;
@@ -74,7 +76,7 @@ class EmpresaController {
     }
   }
 
-  // Sin cambios ─────────────────────────────────────────────
+  // Recolectar del arbol de base de datos aquellos usuarios pertenecientes al solicitante
   async listarUsuarios(req, res) {
     try {
       const empresaId = req.usuario.empresa_id;
@@ -92,12 +94,13 @@ class EmpresaController {
     }
   }
 
-  // Sin cambios ─────────────────────────────────────────────
+  // Agrega a la base operativa nuevas credenciales para subadmin   
   async crearUsuario(req, res) {
     try {
       const empresaId = req.usuario.empresa_id;
       const { nombre, correo, contraseña, telefono } = req.body;
 
+      // Validacion de requisitos
       if (!nombre || !correo || !contraseña) {
         return res.status(400).json({ success: false, message: 'Nombre, correo y contraseña son obligatorios' });
       }
@@ -105,9 +108,10 @@ class EmpresaController {
       const usuarioExistente = await Usuario.findOne({ where: { correo } });
 
       if (usuarioExistente) {
-        return res.status(400).json({ success: false, message: 'El correo ya está registrado' });
+        return res.status(400).json({ success: false, message: 'El correo ya esta registrado' });
       }
 
+      // Por defecto no exije confirmacion a sub-usuarios al provenir internamente
       const nuevoUsuario = await Usuario.create({
         empresa_id: empresaId,
         nombre, correo, contraseña, telefono,
@@ -133,23 +137,25 @@ class EmpresaController {
     }
   }
 
-  // Sin cambios ─────────────────────────────────────────────
+  // Utilidad estandar implementada en la pestana de modificacion
   async actualizarUsuario(req, res) {
     try {
       const empresaId = req.usuario.empresa_id;
       const { id } = req.params;
       const { nombre, correo, telefono, contraseña } = req.body;
 
+      // Asegurar limites funcionales para resguardar a usuarios de otras organizaciones
       const usuario = await Usuario.findOne({ where: { id, empresa_id: empresaId } });
 
       if (!usuario) {
         return res.status(404).json({ success: false, message: 'Usuario no encontrado' });
       }
 
+      // Comprobacion adicional en el correo para descartar si ha sido tomado por terceros
       if (correo && correo !== usuario.correo) {
         const correoExistente = await Usuario.findOne({ where: { correo } });
         if (correoExistente) {
-          return res.status(400).json({ success: false, message: 'El correo ya está registrado' });
+          return res.status(400).json({ success: false, message: 'El correo ya esta registrado' });
         }
       }
 
@@ -157,6 +163,7 @@ class EmpresaController {
       if (correo) usuario.correo = correo;
       if (telefono !== undefined) usuario.telefono = telefono;
 
+      // Actualizacion del encriptamiento en caso de requerirse cambio oficial de perfil 
       if (contraseña) {
         const salt = await bcrypt.genSalt(10);
         usuario.contraseña = await bcrypt.hash(contraseña, salt);
@@ -176,7 +183,7 @@ class EmpresaController {
     }
   }
 
-  // Sin cambios ─────────────────────────────────────────────
+  // Prevenir mediante destruccion del identificador al usuario actual
   async eliminarUsuario(req, res) {
     try {
       const empresaId = req.usuario.empresa_id;
@@ -202,7 +209,7 @@ class EmpresaController {
     }
   }
 
-  // Sin cambios ─────────────────────────────────────────────
+  // Conteo referencial que agrupa metricas operativas y contables por sesion e inscripcion
   async obtenerEstadisticas(req, res) {
     try {
       const empresaId = req.usuario.empresa_id;
@@ -229,12 +236,12 @@ class EmpresaController {
       });
 
     } catch (error) {
-      console.error('Error al obtener estadísticas:', error);
-      res.status(500).json({ success: false, message: 'Error al obtener estadísticas' });
+      console.error('Error al obtener estadisticas:', error);
+      res.status(500).json({ success: false, message: 'Error al obtener estadisticas' });
     }
   }
 
-  // ── NUEVO ─────────────────────────────────────────────────
+  // ── RUTAS REFERENCIALES PARA PROCESOS DE PREPARACION ONBOARDING ──
   // PUT /api/empresas/onboarding
   // Llamado desde el componente de onboarding del frontend.
   // Guarda tipo_negocio y marca onboarding como completado.
@@ -260,7 +267,7 @@ class EmpresaController {
       empresa.onboarding_completado = true;
       await empresa.save();
 
-      console.log(`✅ [ONBOARDING] Empresa ${empresaId} completó onboarding: ${tipo_negocio}`);
+      console.log(`[ONBOARDING] Empresa ${empresaId} completo onboarding: ${tipo_negocio}`);
 
       res.status(200).json({
         success: true,
@@ -277,7 +284,6 @@ class EmpresaController {
     }
   }
 
-  // ── NUEVO ─────────────────────────────────────────────────
   // GET /api/empresas/onboarding
   // El guard del frontend lo llama al cargar el dashboard
   // para verificar si debe redirigir al onboarding.

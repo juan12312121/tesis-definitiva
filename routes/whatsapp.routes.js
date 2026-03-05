@@ -4,20 +4,20 @@ const whatsappController = require('../controllers/whatsappController');
 const whatsappService = require('../services/whatsappService');
 const { verificarToken } = require('../middleware/auth.middleware');
 
-console.log('📋 Cargando whatsapp.routes.js...');
+console.log('[RUTAS] Cargando whatsapp.routes.js...');
 
 // ========================================
-// 🌐 RUTAS PÚBLICAS (SIN TOKEN) - PARA N8N
+// RUTAS PUBLICAS (SIN TOKEN) - PARA N8N
 // ========================================
 
-// 🚀 INICIAR SESIÓN
+// Crear infraestructura de baileio
 router.post('/public/iniciar-sesion', async (req, res) => {
   try {
     const { empresaId, nombreSesion } = req.body;
-    
-    console.log(`\n🚀 POST /public/iniciar-sesion`);
-    console.log(`   Empresa: ${empresaId}, Sesión: ${nombreSesion}`);
-    
+
+    console.log(`\n[RUTAS] POST /public/iniciar-sesion`);
+    console.log(`   Empresa: ${empresaId}, Sesion: ${nombreSesion}`);
+
     if (!empresaId || !nombreSesion) {
       return res.status(400).json({
         success: false,
@@ -28,7 +28,7 @@ router.post('/public/iniciar-sesion', async (req, res) => {
     const resultado = await whatsappService.iniciarSesion(parseInt(empresaId), nombreSesion);
     res.json(resultado);
   } catch (error) {
-    console.error('❌ Error iniciando sesión:', error);
+    console.error('[RUTAS] Error iniciando sesion:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -36,15 +36,15 @@ router.post('/public/iniciar-sesion', async (req, res) => {
   }
 });
 
-// ✅ VERIFICAR ESTADO
+// Comprobar la conexion activa de baileys transitoriamente
 router.get('/public/estado/:empresaId/:nombreSesion', async (req, res) => {
   try {
     const { empresaId, nombreSesion } = req.params;
-    
-    console.log(`✅ GET /public/estado/${empresaId}/${nombreSesion}`);
-    
+
+    console.log(`[RUTAS] GET /public/estado/${empresaId}/${nombreSesion}`);
+
     const estado = await whatsappService.verificarEstado(parseInt(empresaId), nombreSesion);
-    
+
     res.json({
       success: true,
       empresaId,
@@ -53,7 +53,7 @@ router.get('/public/estado/:empresaId/:nombreSesion', async (req, res) => {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('❌ Error verificando estado:', error);
+    console.error('[RUTAS] Error verificando estado:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -61,17 +61,17 @@ router.get('/public/estado/:empresaId/:nombreSesion', async (req, res) => {
   }
 });
 
-// 📱 OBTENER QR
+// Mostrar imagen o string url para enlazar al inicio por codigo
 router.get('/public/obtener-qr/:empresaId/:nombreSesion', async (req, res) => {
   try {
     const { empresaId, nombreSesion } = req.params;
-    
-    console.log(`📱 GET /public/obtener-qr/${empresaId}/${nombreSesion}`);
-    
+
+    console.log(`[RUTAS] GET /public/obtener-qr/${empresaId}/${nombreSesion}`);
+
     const resultado = whatsappService.obtenerQR(parseInt(empresaId), nombreSesion);
     res.json(resultado);
   } catch (error) {
-    console.error('❌ Error obteniendo QR:', error);
+    console.error('[RUTAS] Error obteniendo QR:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -79,15 +79,14 @@ router.get('/public/obtener-qr/:empresaId/:nombreSesion', async (req, res) => {
   }
 });
 
-
-// Enviar imagen con caption
+// Rutear un archivo grafico como mensaje anidado con base 64 usual y text extra via webhook n8n
 router.post('/public/enviar-imagen', async (req, res) => {
   try {
     const { empresaId, nombreSesion, numeroDestino, imagenUrl, caption } = req.body;
 
     console.log(`\n${'='.repeat(70)}`);
-    console.log(`📸 POST /public/enviar-imagen`);
-    console.log(`   Empresa: ${empresaId}, Sesión: ${nombreSesion}`);
+    console.log(`[RUTAS] POST /public/enviar-imagen`);
+    console.log(`   Empresa: ${empresaId}, Sesion: ${nombreSesion}`);
     console.log(`   Destino: ${numeroDestino}`);
     console.log(`   ImagenUrl: ${imagenUrl}`);
     console.log(`${'='.repeat(70)}`);
@@ -95,7 +94,7 @@ router.post('/public/enviar-imagen', async (req, res) => {
     if (!empresaId || !nombreSesion || !numeroDestino || !imagenUrl) {
       return res.status(400).json({
         success: false,
-        message: 'Faltan parámetros requeridos'
+        message: 'Faltan parametros requeridos'
       });
     }
 
@@ -109,7 +108,7 @@ router.post('/public/enviar-imagen', async (req, res) => {
 
     res.json(resultado);
   } catch (error) {
-    console.error('❌ Error enviando imagen:', error);
+    console.error('[RUTAS] Error enviando imagen:', error);
     res.status(500).json({
       success: false,
       message: error.message
@@ -117,13 +116,13 @@ router.post('/public/enviar-imagen', async (req, res) => {
   }
 });
 
-// 📤 ENVIAR MENSAJE
+// Comunicacion por mensaje plano estandar (texto) originado desdel bot a un destino
 router.post('/public/enviar-mensaje', async (req, res) => {
   try {
     const { empresaId, nombreSesion, numeroDestino, mensaje } = req.body;
-    
-    console.log(`📤 POST /public/enviar-mensaje`);
-    
+
+    console.log(`[RUTAS] POST /public/enviar-mensaje`);
+
     if (!empresaId || !nombreSesion || !numeroDestino || !mensaje) {
       return res.status(400).json({
         success: false,
@@ -132,15 +131,15 @@ router.post('/public/enviar-mensaje', async (req, res) => {
     }
 
     const resultado = await whatsappService.enviarMensaje(
-      parseInt(empresaId), 
-      nombreSesion, 
-      numeroDestino, 
+      parseInt(empresaId),
+      nombreSesion,
+      numeroDestino,
       mensaje
     );
-    
+
     res.json(resultado);
   } catch (error) {
-    console.error('❌ Error enviando mensaje:', error);
+    console.error('[RUTAS] Error enviando mensaje:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -148,17 +147,17 @@ router.post('/public/enviar-mensaje', async (req, res) => {
   }
 });
 
-// 🔒 CERRAR SESIÓN
+// Control transitorio al terminar instancia para revocar autorizacion del bot por empresa
 router.post('/public/cerrar-sesion/:empresaId/:nombreSesion', async (req, res) => {
   try {
     const { empresaId, nombreSesion } = req.params;
-    
-    console.log(`🔒 POST /public/cerrar-sesion/${empresaId}/${nombreSesion}`);
-    
+
+    console.log(`[RUTAS] POST /public/cerrar-sesion/${empresaId}/${nombreSesion}`);
+
     const resultado = await whatsappService.cerrarSesion(parseInt(empresaId), nombreSesion);
     res.json(resultado);
   } catch (error) {
-    console.error('❌ Error cerrando sesión:', error);
+    console.error('[RUTAS] Error cerrando sesion:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -166,13 +165,13 @@ router.post('/public/cerrar-sesion/:empresaId/:nombreSesion', async (req, res) =
   }
 });
 
-// 📋 CONFIGURACIÓN CHATBOT (PÚBLICO PARA N8N)
+// Compatibilidad adicional delegada al bot n8n para traer todo parametro transicional (horario o de bot nativo)
 router.get('/public/configuracion-chatbot', async (req, res) => {
   try {
     const { empresaId } = req.query;
-    
-    console.log(`📋 GET /public/configuracion-chatbot?empresaId=${empresaId}`);
-    
+
+    console.log(`[RUTAS] GET /public/configuracion-chatbot?empresaId=${empresaId}`);
+
     if (!empresaId) {
       return res.status(400).json({
         success: false,
@@ -180,10 +179,9 @@ router.get('/public/configuracion-chatbot', async (req, res) => {
       });
     }
 
-    // Llamar al método del controlador
     await whatsappController.obtenerConfiguracionChatbot(req, res);
   } catch (error) {
-    console.error('❌ Error obteniendo configuración:', error);
+    console.error('[RUTAS] Error obteniendo configuracion:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -191,14 +189,14 @@ router.get('/public/configuracion-chatbot', async (req, res) => {
   }
 });
 
-// 📤 ENVIAR RESPUESTA N8N (PÚBLICO)
+// Disparo alterno para formatear menu en base a listados, encuestas de bot a numero
 router.post('/public/enviar-respuesta-n8n', async (req, res) => {
   try {
     const { empresaId, nombreSesion, numeroDestino, mensaje, botones } = req.body;
-    
-    console.log(`📤 POST /public/enviar-respuesta-n8n`);
-    console.log(`   Empresa: ${empresaId}, Sesión: ${nombreSesion}`);
-    
+
+    console.log(`[RUTAS] POST /public/enviar-respuesta-n8n`);
+    console.log(`   Empresa: ${empresaId}, Sesion: ${nombreSesion}`);
+
     if (!empresaId || !nombreSesion || !numeroDestino || !mensaje) {
       return res.status(400).json({
         success: false,
@@ -206,10 +204,9 @@ router.post('/public/enviar-respuesta-n8n', async (req, res) => {
       });
     }
 
-    // Llamar al método del controlador
     await whatsappController.enviarRespuestaN8N(req, res);
   } catch (error) {
-    console.error('❌ Error enviando respuesta N8N:', error);
+    console.error('[RUTAS] Error enviando respuesta N8N:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -217,15 +214,15 @@ router.post('/public/enviar-respuesta-n8n', async (req, res) => {
   }
 });
 
-// 📊 ESTADO DETALLADO
+// Diagnostico general de los detalles de la conexion baileys (memoria, qr viejo, en progreso)
 router.get('/public/estado-detallado/:empresaId/:nombreSesion', (req, res) => {
   try {
     const { empresaId, nombreSesion } = req.params;
-    
-    console.log(`📊 GET /public/estado-detallado/${empresaId}/${nombreSesion}`);
-    
+
+    console.log(`[RUTAS] GET /public/estado-detallado/${empresaId}/${nombreSesion}`);
+
     const estado = whatsappService.obtenerEstadoSesion(parseInt(empresaId), nombreSesion);
-    
+
     res.json({
       success: true,
       empresaId,
@@ -234,7 +231,7 @@ router.get('/public/estado-detallado/:empresaId/:nombreSesion', (req, res) => {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('❌ Error:', error);
+    console.error('[RUTAS] Error:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -242,11 +239,11 @@ router.get('/public/estado-detallado/:empresaId/:nombreSesion', (req, res) => {
   }
 });
 
-// 📋 LISTAR SESIONES
+// Mostrar metricas o log de toda sesion activa general
 router.get('/public/sesiones', (req, res) => {
   try {
-    console.log(`📋 GET /public/sesiones`);
-    
+    console.log(`[RUTAS] GET /public/sesiones`);
+
     const sesiones = [];
     for (const [key, sock] of whatsappService.sessions.entries()) {
       sesiones.push({
@@ -256,14 +253,14 @@ router.get('/public/sesiones', (req, res) => {
         nombre: sock?.user?.name || null
       });
     }
-    
+
     res.json({
       success: true,
       sesiones,
       total: sesiones.length
     });
   } catch (error) {
-    console.error('❌ Error:', error);
+    console.error('[RUTAS] Error:', error);
     res.status(500).json({
       success: false,
       error: error.message
@@ -271,29 +268,29 @@ router.get('/public/sesiones', (req, res) => {
   }
 });
 
-console.log('✅ Rutas públicas de WhatsApp registradas');
+console.log('[RUTAS] Rutas publicas de WhatsApp registradas');
 
 // ========================================
-// 🔒 RUTAS PROTEGIDAS (CON TOKEN) - DASHBOARD
+// RUTAS PROTEGIDAS (CON TOKEN) - DASHBOARD
 // ========================================
 
 router.use(verificarToken);
 
-// Obtener QR (protegido)
+// Presentacion UI
 router.get('/qr', whatsappController.obtenerQR);
 
-// Verificar estado (protegido)
+// UI validacion ping
 router.get('/estado', whatsappController.verificarEstado);
 
-// Enviar mensaje (protegido)
+// Formato emisor directo UI manual o de campaña al cliente
 router.post('/enviar-mensaje', whatsappController.enviarMensaje);
 
-// Desconectar (protegido)
+// Metodo administrativo
 router.post('/desconectar', whatsappController.desconectarInstancia);
 
-// Reiniciar conexión (protegido)
+// Purga e reinicio administrativo forzado
 router.post('/reiniciar', whatsappController.reiniciarConexion);
 
-console.log('✅ Rutas protegidas de WhatsApp registradas');
+console.log('[RUTAS] Rutas protegidas de WhatsApp registradas');
 
 module.exports = router;
