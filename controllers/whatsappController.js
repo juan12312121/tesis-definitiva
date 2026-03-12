@@ -52,23 +52,23 @@ class WhatsAppController {
       if (!resultadoQR || !resultadoQR.success) {
         // Si no hay QR, intentar reiniciar la sesión
         console.log(`⚠️ No hay QR disponible, verificando estado...`);
-        
+
         const estado = await whatsappService.verificarEstado(empresaId, instancia.nombre_sesion);
-        
+
         console.log(`📊 Estado de sesión:`, estado);
-        
+
         if (!estado.existe) {
           // La sesión no existe, crearla
           console.log(`🔄 Sesión no existe para empresa ${empresaId}, iniciando...`);
           await whatsappService.iniciarSesion(empresaId, instancia.nombre_sesion);
-          
+
           return res.status(200).json({
             success: false,
             message: 'Sesión iniciándose. Espera 5 segundos y recarga la página.',
             estado
           });
         }
-        
+
         return res.status(200).json({
           success: false,
           message: 'QR no disponible',
@@ -79,7 +79,7 @@ class WhatsAppController {
 
       // 🔥 CORRECCIÓN: Extraer el QR correctamente
       const qrCode = resultadoQR.qr; // ← Extraer el string directamente
-      
+
       console.log(`✅ QR encontrado, enviando al frontend...`);
       console.log(`📦 QR length: ${qrCode?.length || 0} caracteres`);
       console.log(`📦 QR preview: ${qrCode?.substring(0, 50)}...`);
@@ -100,7 +100,7 @@ class WhatsAppController {
       console.error(`   Error: ${error.message}`);
       console.error(`   Stack: ${error.stack}`);
       console.error(`${'='.repeat(60)}\n`);
-      
+
       res.status(500).json({
         success: false,
         message: 'Error al obtener código QR',
@@ -163,7 +163,7 @@ class WhatsAppController {
 ║ 💬 Mensaje:       ${mensaje}
 ╚════════════════════════════════════════════════════════╝
       `);
-      
+
       const resultado = await whatsappService.enviarMensaje(
         empresaId,
         nombreSesion,
@@ -296,13 +296,13 @@ class WhatsAppController {
       }
 
       console.log(`🔄 Reiniciando conexión para empresa ${empresaId}...`);
-      
+
       try {
         await whatsappService.cerrarSesion(empresaId, instancia.nombre_sesion);
       } catch (err) {
         console.log('⚠️ No había sesión activa para cerrar');
       }
-      
+
       await whatsappService.iniciarSesion(empresaId, instancia.nombre_sesion);
 
       res.json({
@@ -332,14 +332,16 @@ class WhatsAppController {
       }
 
       const ConfiguracionChatbot = require('../models/ConfiguracionChatbot');
-      const { InstanciaWhatsapp } = require('../models');
-      
+      const { InstanciaWhatsapp, Empresa } = require('../models');
+
       const config = await ConfiguracionChatbot.findOne({
-        where: { 
+        where: {
           empresa_id: empresaId,
-          activo: true 
+          activo: true
         }
       });
+
+      const empresa = await Empresa.findByPk(empresaId);
 
       const instancia = await InstanciaWhatsapp.findOne({
         where: { empresa_id: empresaId }
@@ -353,7 +355,7 @@ class WhatsAppController {
       }
 
       if (!config) {
-        return res.json({
+        res.json({
           nombreSesion: instancia.nombre_sesion,
           conectado: instancia.conectado,
           mensaje_horario: "¡Hola! Estamos disponibles de 9:00 AM a 6:00 PM de Lunes a Viernes",
@@ -362,7 +364,8 @@ class WhatsAppController {
           hora_fin: 18,
           dias_laborales: [1, 2, 3, 4, 5],
           trigger_horarios: "horario",
-          trigger_productos: "productos"
+          trigger_productos: "productos",
+          tipo_negocio: empresa?.tipo_negocio || 'productos'
         });
       }
 
@@ -378,7 +381,8 @@ class WhatsAppController {
         hora_fin: horaFin,
         dias_laborales: config.dias_laborales || [1, 2, 3, 4, 5],
         trigger_horarios: "horario",
-        trigger_productos: "productos"
+        trigger_productos: "productos",
+        tipo_negocio: empresa?.tipo_negocio || 'productos'
       });
 
     } catch (error) {
@@ -393,7 +397,7 @@ class WhatsAppController {
   async enviarRespuestaN8N(req, res) {
     try {
       const { empresaId, nombreSesion, numeroDestino, mensaje, botones } = req.body;
-      
+
       console.log(`
 ╔════════════════════════════════════════════════════════╗
 ║         📤 ENVIANDO RESPUESTA DESDE N8N               ║
@@ -415,7 +419,7 @@ class WhatsAppController {
       }
 
       let nombreSesionReal = nombreSesion;
-      
+
       if (nombreSesion && nombreSesion.includes('_')) {
         const prefijo = `${empresaId}_`;
         if (nombreSesion.startsWith(prefijo)) {
